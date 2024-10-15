@@ -6,6 +6,8 @@ members = [
     "crates/crabml/crabml-vulkan",
     "crates/crabml/crabml-llama2",
     "crates/crabml/crabml-cli",
+    "crates/crabwaifu-server",
+    "crates/crabwaifu-client",
 ]
 
 [profile.release]
@@ -22,18 +24,3 @@ crabml-llama2 = { version = "0.1.0", path = "crates/crabml/crabml-llama2" }
 crabml-wgpu = { version = "0.1.0", path = "crates/crabml/crabml-wgpu" }
 crabml-vulkan = { version = "0.1.0", path = "crates/crabml/crabml-vulkan" }
 raknet-rs = { git = "https://github.com/MemoriesOfTime/raknet-rs.git" }
-
-[package]
-name = "crabwaifu"
-version = { workspace = true }
-edition = { workspace = true }
-license = { workspace = true }
-description = "crabwaifu"
-
-[dependencies]
-crabml = { workspace = true }
-crabml-llama2 = { workspace = true }
-raknet-rs = { workspace = true }
-num_cpus = "1.16.0"
-tokio = { version = "1", features = ["full"] }
-env_logger = "0.11"
