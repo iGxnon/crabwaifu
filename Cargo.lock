@@ -496,6 +496,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabwaifu-common"
+version = "0.1.0"
+
+[[package]]
 name = "crabwaifu-server"
 version = "0.1.0"
 dependencies = [
