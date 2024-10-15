@@ -1,0 +1,19 @@
+[package]
+name = "crabml-cli"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+description = "crabml cli"
+
+[dependencies]
+rayon = "1"
+num_cpus = "1.16.0"
+clap = { version = "4.0", features = ["derive"] }
+crabml-llama2 = { workspace = true }
+crabml-wgpu = { workspace = true }
+crabml = { workspace = true }
+jemallocator = "0.3"
+rustyline = "9.0.0"
+
+[dev-dependencies]
+pretty_assertions = "1.2.1"
