@@ -1,14 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/crabml/crabml-core",
-    "crates/crabml/crabml-wgpu",
-    "crates/crabml/crabml-vulkan",
-    "crates/crabml/crabml-llama2",
     "crates/crabml/crabml-cli",
-    "crates/crabwaifu-server",
+    "crates/crabml/crabml-core",
+    "crates/crabml/crabml-llama2",
+    "crates/crabml/crabml-vulkan",
+    "crates/crabml/crabml-wgpu",
     "crates/crabwaifu-client",
     "crates/crabwaifu-common",
+    "crates/crabwaifu-server",
 ]
 
 [profile.release]

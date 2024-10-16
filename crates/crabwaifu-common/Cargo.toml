@@ -5,3 +5,15 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
+bincode = "1"
+bytes = "1"
+clap = { version = "4.0", features = ["derive"] }
+crabml = { workspace = true }
+crabml-llama2 = { workspace = true }
+env_logger = "0.11"
+futures = { version = "0.3.5", default-features = false }
+log = "0.4"
+num_cpus = "1.16.0"
+raknet-rs = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }

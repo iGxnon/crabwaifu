@@ -5,8 +5,8 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-raknet-rs = { workspace = true }
-crabwaifu-common = { workspace = true }
-tokio = { version = "1", features = ["full"] }
-env_logger = "0.11"
 clap = { version = "4.0", features = ["derive"] }
+crabwaifu-common = { workspace = true }
+env_logger = "0.11"
+raknet-rs = { workspace = true }
+tokio = { version = "1", features = ["full"] }
