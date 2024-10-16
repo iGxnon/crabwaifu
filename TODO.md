@@ -1,13 +1,15 @@
-- [ ] Implementing raknet controller
+- [x] Implementing raknet controller
 - [ ] Session Manager based on Llama2Chat
 - [ ] Chat API
 - [ ] Command line client
 - [ ] Micro benchmark
 - [ ] ASR & TTS
+  - [ ] HuggingFace with python
+  - [ ] Contribute crates `crabml-tts` and `crabml-asr` ?
 - [ ] RealTime API
 - [ ] Web client
 - [ ] Bulk benchmark
-- [ ] Embedded client
+- [ ] Embedded client ?
   - [ ] Arduino ?
   - [ ] Esp32 ?
   - [ ] K210 ?
