@@ -33,12 +33,12 @@ where
     const RELIABILITY: Reliability = Reliability::ReliableOrdered;
 }
 
-pub trait Tx<P: Packet> {
-    /// It can be sent frequently to a target in multiple threads, so it is a shared reference
+// Sending packets within many threads, so this is a shared reference
+pub trait Tx {
     fn send_raw(&self, msg: Message) -> impl Future<Output = io::Result<()>> + Send + Sync;
 
-    /// Send a packet with reliability and order channel specified in Pack
-    fn send_pack(&self, pack: P) -> impl Future<Output = io::Result<()>> {
+    /// Send a packet with reliability and order channel specified in P
+    fn send_pack<P: Packet>(&self, pack: P) -> impl Future<Output = io::Result<()>> {
         async move {
             let mut writer = BytesMut::with_capacity(P::GUESS_CAP).writer();
             bincode::serialize_into(&mut writer, &pack)
@@ -50,8 +50,8 @@ pub trait Tx<P: Packet> {
     }
 }
 
+/// Receiving packets happens only in one place, so this is an exclusive reference (mutable reference)
 pub trait Rx<P: Packet> {
-    /// Receiving happens only in one place, so this is an exclusive reference (mutable reference)
     fn recv_raw(&mut self) -> impl Future<Output = io::Result<Bytes>> + Send + Sync;
 
     fn recv_pack(&mut self) -> impl Future<Output = io::Result<P>> {
@@ -66,7 +66,7 @@ pub trait Rx<P: Packet> {
 
 // something underneath Tx and Rx
 
-impl<P: Packet> Tx<P> for mpsc::Sender<Message> {
+impl Tx for mpsc::Sender<Message> {
     async fn send_raw(&self, msg: Message) -> io::Result<()> {
         self.send(msg)
             .await

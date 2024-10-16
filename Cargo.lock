@@ -511,13 +511,8 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "bytes",
- "clap",
- "crabml",
- "crabml-llama2",
- "env_logger 0.11.5",
  "futures",
  "log",
- "num_cpus",
  "raknet-rs",
  "serde",
  "tokio",
@@ -527,7 +522,6 @@ dependencies = [
 name = "crabwaifu-server"
 version = "0.1.0"
 dependencies = [
- "clap",
  "crabml",
  "crabml-llama2",
  "crabwaifu-common",
