@@ -1,0 +1,21 @@
+listen_addr = "0.0.0.0:8808"
+
+[llama]
+model = "./llama.gguf"
+steps = 300
+probability = 0.9
+temperature = 1.0
+threads = 8
+mlock = false
+
+[raknet]
+send_buf_cap = 1024
+sever_guid = 4170652262067404866
+advertisement = "Hi, I am server"
+min_mtu = 510
+max_mtu = 1500
+support_version = [9, 11, 13]
+max_pending = 1024
+max_parted_size = 256
+max_parted_count = 256
+max_channels = 1
