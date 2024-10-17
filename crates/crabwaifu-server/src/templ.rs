@@ -234,6 +234,7 @@ impl PromptBuilder {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crabwaifu_common::proto::chat::{Message, Role};
 

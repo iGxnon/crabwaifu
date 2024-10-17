@@ -51,7 +51,9 @@ pub trait Tx: Send + Sync {
         async move {
             let cap = bincode::serialized_size(&pack).unwrap_or_default() as usize + 1;
             let mut writer = BytesMut::with_capacity(cap).writer();
-            write!(writer, "{}", P::ID as u8).expect("failed to write ID into buffer");
+            writer
+                .write_all(&[P::ID as u8])
+                .expect("failed to write ID into buffer");
             bincode::serialize_into(&mut writer, &pack)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
             let buf = writer.into_inner();

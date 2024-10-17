@@ -50,6 +50,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     async fn completion(&mut self, messages: &[Message], steps: usize) -> String {
+        log::info!("processing completion...");
         let prompt = self.chat_templ.format(messages);
         self.llama_runner
             .prefill_and_generate(&prompt, steps)

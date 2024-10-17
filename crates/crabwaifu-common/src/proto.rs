@@ -35,11 +35,8 @@ pub mod chat {
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Request {
         pub messages: Vec<Message>,
-        pub temperature: Option<f32>,
         // i.e max_tokens
         pub steps: Option<usize>,
-        // i.e top_p
-        pub probability: Option<f32>,
     }
 
     #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -56,6 +56,7 @@ pub async fn serve(config: Config) -> io::Result<()> {
             format!("unable to load llama2 model err {err}"),
         )
     })?;
+    log::info!("server listens on {}", config.listen_addr);
     let mut incoming = net::UdpSocket::bind(config.listen_addr)
         .await?
         .make_incoming(config.raknet);
