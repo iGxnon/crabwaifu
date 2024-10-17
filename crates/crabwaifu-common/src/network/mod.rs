@@ -1,7 +1,8 @@
 use std::future::Future;
 use std::io;
+use std::io::Write;
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::{Sink, Stream, StreamExt};
 use raknet_rs::{Message, Reliability};
 use serde::de::DeserializeOwned;
@@ -12,13 +13,15 @@ mod flusher;
 
 pub use flusher::spawn_flush_task;
 
+use crate::proto::{self, chat, PacketID};
+
 // I am the loyal fan of static dispatch(
 // Ensure unpin here cz i do not want to write too many projections
-pub trait UnpinWriter = Sink<Message, Error = io::Error> + Unpin + Send + Sync + 'static;
-pub trait UnpinReader = Stream<Item = Bytes> + Unpin + Send + Sync + 'static;
+pub trait PinWriter = Sink<Message, Error = io::Error> + Unpin + Send + Sync + 'static;
+pub trait PinReader = Stream<Item = Bytes> + Unpin + Send + Sync + 'static;
 
-pub trait Packet: Serialize + DeserializeOwned {
-    const GUESS_CAP: usize;
+pub trait Packet: Serialize + DeserializeOwned + 'static {
+    const ID: PacketID;
     const RELIABILITY: Reliability;
     const ORDER_CHANNEL: u8;
 }
@@ -26,11 +29,12 @@ pub trait Packet: Serialize + DeserializeOwned {
 /// Default implementation for random packets
 impl<P> Packet for P
 where
-    P: Serialize + DeserializeOwned,
+    P: Serialize + DeserializeOwned + 'static,
 {
-    const GUESS_CAP: usize = 0;
-    const ORDER_CHANNEL: u8 = 0;
-    const RELIABILITY: Reliability = Reliability::ReliableOrdered;
+    // ID must be override
+    default const ID: PacketID = PacketID::InvalidPack;
+    default const ORDER_CHANNEL: u8 = 0;
+    default const RELIABILITY: Reliability = Reliability::ReliableOrdered;
 }
 
 // Sending packets within many threads, so this is a shared reference
@@ -39,8 +43,15 @@ pub trait Tx {
 
     /// Send a packet with reliability and order channel specified in P
     fn send_pack<P: Packet>(&self, pack: P) -> impl Future<Output = io::Result<()>> {
+        debug_assert!(
+            !matches!(P::ID, PacketID::InvalidPack),
+            "please send a valid packet"
+        );
+
         async move {
-            let mut writer = BytesMut::with_capacity(P::GUESS_CAP).writer();
+            let cap = bincode::serialized_size(&pack).unwrap_or_default() as usize + 1;
+            let mut writer = BytesMut::with_capacity(cap).writer();
+            write!(writer, "{}", P::ID as u8).expect("failed to write ID into buffer");
             bincode::serialize_into(&mut writer, &pack)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
             let buf = writer.into_inner();
@@ -50,15 +61,36 @@ pub trait Tx {
     }
 }
 
-/// Receiving packets happens only in one place, so this is an exclusive reference (mutable reference)
-pub trait Rx<P: Packet> {
+/// Receiving packets happens only in one place, so this is an exclusive reference (mutable
+/// reference)
+pub trait Rx {
     fn recv_raw(&mut self) -> impl Future<Output = io::Result<Bytes>> + Send + Sync;
 
-    fn recv_pack(&mut self) -> impl Future<Output = io::Result<P>> {
+    fn recv_pack(&mut self) -> impl Future<Output = io::Result<proto::Packet>> {
         async move {
-            let raw = self.recv_raw().await?;
-            let pack: P = bincode::deserialize(&raw)
-                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+            macro_rules! deserialize {
+                ($from:ty, $to:expr, $var:expr) => {
+                    $to(bincode::deserialize::<$from>(&$var)
+                        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?)
+                };
+            }
+
+            let mut raw = self.recv_raw().await?;
+            let id = PacketID::from_u8(raw.get_u8());
+            let pack = match id {
+                PacketID::InvalidPack => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "invalid packet id",
+                    ))
+                }
+                PacketID::ChatRequest => {
+                    deserialize!(chat::Request, proto::Packet::ChatRequest, raw)
+                }
+                PacketID::ChatResponse => {
+                    deserialize!(chat::Response, proto::Packet::ChatResponse, raw)
+                }
+            };
             Ok(pack)
         }
     }
@@ -74,7 +106,7 @@ impl Tx for mpsc::Sender<Message> {
     }
 }
 
-impl<P: Packet, R: UnpinReader> Rx<P> for R {
+impl<R: PinReader> Rx for R {
     async fn recv_raw(&mut self) -> io::Result<Bytes> {
         self.next()
             .await

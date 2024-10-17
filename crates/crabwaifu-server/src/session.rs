@@ -18,7 +18,7 @@ impl<T, R> Drop for Session<T, R> {
     }
 }
 
-impl<T: Tx, R: Rx<Packet>> Session<T, R> {
+impl<T: Tx, R: Rx> Session<T, R> {
     pub fn new(tx: T, rx: R, flush_notify: Arc<Notify>, close_notify: Arc<Notify>) -> Self {
         Self {
             tx,

@@ -9,7 +9,7 @@ use raknet_rs::Message;
 use tokio::sync::{mpsc, Notify};
 use tokio::time;
 
-use super::UnpinWriter;
+use super::PinWriter;
 
 const MIN_FLUSH_DELAY_US: u64 = 2_000; // 2ms
 const MAX_FLUSH_DELAY_US: u64 = 256_000; // 256ms
@@ -20,7 +20,7 @@ const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Spawn the flush task and return the handles of it
 pub fn spawn_flush_task(
-    writer: impl UnpinWriter,
+    writer: impl PinWriter,
 ) -> (mpsc::Sender<Message>, Arc<Notify>, Arc<Notify>) {
     let (mut flusher, tx) = Flusher::new(writer, DEFAULT_BUF_SIZE);
     let flush_notify = Arc::new(Notify::new());
@@ -38,7 +38,7 @@ pub fn spawn_flush_task(
                     }
                 }
                 _ = flush_notify_clone.notified() => {
-                    if let Err(err) = flusher.must_flush().await {
+                    if let Err(err) = flusher.flush().await {
                         log::error!("unexpected flush error {err}, terminating flush task gracefully");
                         break
                     }
@@ -58,14 +58,14 @@ pub fn spawn_flush_task(
 
 // TODO: add metrics
 /// A naive auto balanced flush controller for each connection
-struct Flusher<W: UnpinWriter> {
+struct Flusher<W: PinWriter> {
     writer: W,
     next_flush: Option<time::Instant>,
     buffer: mpsc::Receiver<Message>,
     delay_us: u64,
 }
 
-impl<W: UnpinWriter> Flusher<W> {
+impl<W: PinWriter> Flusher<W> {
     fn new(writer: W, size: usize) -> (Self, mpsc::Sender<Message>) {
         let (tx, rx) = mpsc::channel(size);
         let flusher = Self {
@@ -82,11 +82,6 @@ impl<W: UnpinWriter> Flusher<W> {
         if let Some(next_flush) = self.next_flush {
             time::sleep_until(next_flush).await;
         }
-    }
-
-    #[inline(always)]
-    async fn must_flush(&mut self) -> io::Result<()> {
-        self.writer.flush().await
     }
 
     #[inline(always)]
