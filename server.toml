@@ -20,4 +20,5 @@ support_version = [9, 11, 13]
 max_pending = 1024
 max_parted_size = 256
 max_parted_count = 256
-max_channels = 1
+max_channels = 64
+

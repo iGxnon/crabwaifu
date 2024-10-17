@@ -1,5 +1,5 @@
 - [x] Implementing raknet controller
-- [ ] Chat API
+- [x] Chat API
 - [ ] Session Manager based on Llama2Chat
 - [ ] Command line client
 - [ ] Micro benchmark

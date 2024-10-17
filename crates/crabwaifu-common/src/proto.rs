@@ -30,7 +30,7 @@ pub mod chat {
     use serde::{Deserialize, Serialize};
 
     use super::PacketID;
-    use crate::network::Packet;
+    use crate::network::Pack;
 
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Request {
@@ -49,7 +49,7 @@ pub mod chat {
         pub content: String,
     }
 
-    #[derive(Debug, Clone, Deserialize, Serialize)]
+    #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
     pub enum Role {
         User,
         System,
@@ -58,7 +58,7 @@ pub mod chat {
 
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Response {
-        pub choices: Vec<Message>,
+        pub message: Message,
     }
 
     impl Request {
@@ -74,14 +74,14 @@ pub mod chat {
     }
 
     // chat::Request should be in ordered and reliable, it occupied the order channel 0
-    impl Packet for Request {
+    impl Pack for Request {
         const ID: PacketID = PacketID::ChatRequest;
         const ORDER_CHANNEL: u8 = 0;
         const RELIABILITY: Reliability = Reliability::ReliableOrdered;
     }
 
     // chat::Response is as same as chat::Request
-    impl Packet for Response {
+    impl Pack for Response {
         const ID: PacketID = PacketID::ChatResponse;
         const ORDER_CHANNEL: u8 = 0;
         const RELIABILITY: Reliability = Reliability::ReliableOrdered;

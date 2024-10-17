@@ -13,23 +13,23 @@ mod flusher;
 
 pub use flusher::spawn_flush_task;
 
-use crate::proto::{self, chat, PacketID};
+use crate::proto::{chat, Packet, PacketID};
 
 // I am the loyal fan of static dispatch(
 // Ensure unpin here cz i do not want to write too many projections
 pub trait PinWriter = Sink<Message, Error = io::Error> + Unpin + Send + Sync + 'static;
 pub trait PinReader = Stream<Item = Bytes> + Unpin + Send + Sync + 'static;
 
-pub trait Packet: Serialize + DeserializeOwned + 'static {
+pub trait Pack: Serialize + DeserializeOwned + Send + Sync + 'static {
     const ID: PacketID;
     const RELIABILITY: Reliability;
     const ORDER_CHANNEL: u8;
 }
 
 /// Default implementation for random packets
-impl<P> Packet for P
+impl<P> Pack for P
 where
-    P: Serialize + DeserializeOwned + 'static,
+    P: Serialize + DeserializeOwned + Send + Sync + 'static,
 {
     // ID must be override
     default const ID: PacketID = PacketID::InvalidPack;
@@ -38,11 +38,11 @@ where
 }
 
 // Sending packets within many threads, so this is a shared reference
-pub trait Tx {
+pub trait Tx: Send + Sync {
     fn send_raw(&self, msg: Message) -> impl Future<Output = io::Result<()>> + Send + Sync;
 
     /// Send a packet with reliability and order channel specified in P
-    fn send_pack<P: Packet>(&self, pack: P) -> impl Future<Output = io::Result<()>> {
+    fn send_pack<P: Pack>(&self, pack: P) -> impl Future<Output = io::Result<()>> + Send {
         debug_assert!(
             !matches!(P::ID, PacketID::InvalidPack),
             "please send a valid packet"
@@ -66,7 +66,7 @@ pub trait Tx {
 pub trait Rx {
     fn recv_raw(&mut self) -> impl Future<Output = io::Result<Bytes>> + Send + Sync;
 
-    fn recv_pack(&mut self) -> impl Future<Output = io::Result<proto::Packet>> {
+    fn recv_pack(&mut self) -> impl Future<Output = io::Result<Packet>> {
         async move {
             macro_rules! deserialize {
                 ($from:ty, $to:expr, $var:expr) => {
@@ -85,10 +85,10 @@ pub trait Rx {
                     ))
                 }
                 PacketID::ChatRequest => {
-                    deserialize!(chat::Request, proto::Packet::ChatRequest, raw)
+                    deserialize!(chat::Request, Packet::ChatRequest, raw)
                 }
                 PacketID::ChatResponse => {
-                    deserialize!(chat::Response, proto::Packet::ChatResponse, raw)
+                    deserialize!(chat::Response, Packet::ChatResponse, raw)
                 }
             };
             Ok(pack)

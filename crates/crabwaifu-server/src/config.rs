@@ -3,14 +3,14 @@ use std::net::SocketAddr;
 use raknet_rs::server;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub llama: CrabLlamaConfig,
     pub raknet: server::Config,
     pub listen_addr: SocketAddr,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrabLlamaConfig {
     /// The checkpoint file to load (gguf format)
     pub model: String,
