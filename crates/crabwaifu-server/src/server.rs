@@ -85,6 +85,5 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
             }
         }
     }
-    log::info!("shutdown gracefully");
     Ok(())
 }

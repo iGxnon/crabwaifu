@@ -48,9 +48,12 @@ pub fn spawn_flush_task(
         }
         if let Err(err) = flusher.close().await {
             log::error!("unexpected closing error {err}");
+            // notify the waker that we have closed the flusher
+            close_notify_clone.notify_one();
             return;
         }
         log::info!("flusher closed gracefully");
+        close_notify_clone.notify_one();
     });
 
     (tx, flush_notify, close_notify)

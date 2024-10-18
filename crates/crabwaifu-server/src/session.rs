@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use crabml::cpu::CpuTensor;
 use crabml_llama2::llama2::Llama2Runner;
@@ -17,13 +18,6 @@ pub struct Session<T, R> {
     llama_runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
     default_steps: usize,
-}
-
-impl<T, R> Drop for Session<T, R> {
-    fn drop(&mut self) {
-        // notify the flusher
-        self.close_notify.notify_one();
-    }
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
@@ -116,6 +110,12 @@ impl<T: Tx, R: Rx> Session<T, R> {
                     },
                 },
                 _ = &mut signal => {
+                    // notify that we'll gonna to shutdown
+                    self.close_notify.notify_one();
+                    // wait for flusher response in 10s
+                    if tokio::time::timeout(Duration::from_secs(10), self.close_notify.notified()).await.is_err() {
+                        log::warn!("cannot shutdown session background task `flusher` in 10s, skip it");
+                    }
                     // TODO: wait all background task of this session to be done and return
                     break;
                 }
