@@ -92,6 +92,9 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 // try flush as we completed a whole response
                 self.flush_notify.notify_one();
             }
+            Packet::ChatStreamRequest(request) => {
+                todo!()
+            }
             _ => {
                 log::warn!("got unexpected packet on server {pack:?}");
             }

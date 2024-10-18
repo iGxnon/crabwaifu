@@ -26,17 +26,6 @@ pub trait Pack: Serialize + DeserializeOwned + Send + Sync + 'static {
     const ORDER_CHANNEL: u8;
 }
 
-/// Default implementation for random packets
-impl<P> Pack for P
-where
-    P: Serialize + DeserializeOwned + Send + Sync + 'static,
-{
-    // ID must be override
-    default const ID: PacketID = PacketID::InvalidPack;
-    default const ORDER_CHANNEL: u8 = 0;
-    default const RELIABILITY: Reliability = Reliability::ReliableOrdered;
-}
-
 // Sending packets within many threads, so this is a shared reference
 pub trait Tx: Send + Sync {
     fn send_raw(&self, msg: Message) -> impl Future<Output = io::Result<()>> + Send + Sync;
@@ -91,6 +80,12 @@ pub trait Rx: Send + Sync {
                 }
                 PacketID::ChatResponse => {
                     deserialize!(chat::Response, Packet::ChatResponse, raw)
+                }
+                PacketID::ChatStreamRequest => {
+                    deserialize!(chat::StreamRequest, Packet::ChatStreamRequest, raw)
+                }
+                PacketID::ChatStreamResponse => {
+                    deserialize!(chat::StreamResponse, Packet::ChatStreamResponse, raw)
                 }
             };
             Ok(pack)
