@@ -42,7 +42,7 @@ pub trait Tx: Send + Sync {
     fn send_raw(&self, msg: Message) -> impl Future<Output = io::Result<()>> + Send + Sync;
 
     /// Send a packet with reliability and order channel specified in P
-    fn send_pack<P: Pack>(&self, pack: P) -> impl Future<Output = io::Result<()>> + Send {
+    fn send_pack<P: Pack>(&self, pack: P) -> impl Future<Output = io::Result<()>> + Send + Sync {
         debug_assert!(
             !matches!(P::ID, PacketID::InvalidPack),
             "please send a valid packet"
@@ -65,10 +65,10 @@ pub trait Tx: Send + Sync {
 
 /// Receiving packets happens only in one place, so this is an exclusive reference (mutable
 /// reference)
-pub trait Rx {
+pub trait Rx: Send + Sync {
     fn recv_raw(&mut self) -> impl Future<Output = io::Result<Bytes>> + Send + Sync;
 
-    fn recv_pack(&mut self) -> impl Future<Output = io::Result<Packet>> {
+    fn recv_pack(&mut self) -> impl Future<Output = io::Result<Packet>> + Send + Sync {
         async move {
             macro_rules! deserialize {
                 ($from:ty, $to:expr, $var:expr) => {

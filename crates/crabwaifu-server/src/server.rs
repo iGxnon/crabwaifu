@@ -1,5 +1,3 @@
-use std::io;
-
 use crabml::gguf::{GGUFFile, GGUFFileLoader, GGUFMetadataValueType};
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::{CpuLlamaModelLoader, LlamaConfig};
@@ -15,7 +13,7 @@ use crate::session;
 
 fn setup_llama_model(
     config: config::CrabLlamaConfig,
-) -> crabml::error::Result<(CpuLlamaModel<'static>, LlamaConfig)> {
+) -> anyhow::Result<(CpuLlamaModel<'static>, LlamaConfig)> {
     let gl = GGUFFileLoader::new(&config.model, config.mlock)?;
     let gl: &'static GGUFFileLoader = Box::leak(Box::new(gl));
     let gf: &'static GGUFFile<'static> = Box::leak(Box::new(gl.open()?));
@@ -48,14 +46,9 @@ fn dump_gguf_metadata(gf: &GGUFFile) {
     }
 }
 
-pub async fn serve(config: Config) -> io::Result<()> {
+pub async fn serve(config: Config) -> anyhow::Result<()> {
     let default_steps = config.llama.steps;
-    let (llama_model, conf) = setup_llama_model(config.llama).map_err(|err| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("unable to load llama2 model err {err}"),
-        )
-    })?;
+    let (llama_model, conf) = setup_llama_model(config.llama)?;
     log::info!("server listens on {}", config.listen_addr);
     let mut incoming = net::UdpSocket::bind(config.listen_addr)
         .await?
