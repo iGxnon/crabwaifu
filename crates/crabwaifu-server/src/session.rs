@@ -19,9 +19,6 @@ pub struct Session<T, R> {
     default_steps: usize,
 }
 
-// Safety: we ensure that llama_runner does not reside in multiple threads
-unsafe impl<T: Send, R: Send> Send for Session<T, R> {}
-
 impl<T, R> Drop for Session<T, R> {
     fn drop(&mut self) {
         // close flusher on drop

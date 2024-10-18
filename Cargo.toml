@@ -1,11 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/crabml/crabml-cli",
-    "crates/crabml/crabml-core",
-    "crates/crabml/crabml-llama2",
-    "crates/crabml/crabml-vulkan",
-    "crates/crabml/crabml-wgpu",
     "crates/crabwaifu-client",
     "crates/crabwaifu-common",
     "crates/crabwaifu-server",
@@ -20,9 +15,9 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-crabml = { version = "0.1.0", path = "crates/crabml/crabml-core" }
-crabml-llama2 = { version = "0.1.0", path = "crates/crabml/crabml-llama2" }
-crabml-wgpu = { version = "0.1.0", path = "crates/crabml/crabml-wgpu" }
-crabml-vulkan = { version = "0.1.0", path = "crates/crabml/crabml-vulkan" }
+crabml = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
+crabml-llama2 = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
+crabml-wgpu = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
+crabml-vulkan = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
 crabwaifu-common = { version = "0.1.0", path = "crates/crabwaifu-common" }
 raknet-rs = { git = "https://github.com/MemoriesOfTime/raknet-rs.git" }
