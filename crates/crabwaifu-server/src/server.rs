@@ -1,14 +1,18 @@
+use std::net::SocketAddr;
+
 use crabml::gguf::{GGUFFile, GGUFFileLoader, GGUFMetadataValueType};
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::{CpuLlamaModelLoader, LlamaConfig};
 use crabml_llama2::CpuLlamaModel;
-use crabwaifu_common::network::spawn_flush_task;
-use futures::StreamExt;
+use crabwaifu_common::network::{
+    spawn_flush_task, tcp_split, PinReader, PinWriter, TcpListenerStream,
+};
+use futures::{Stream, StreamExt};
 use raknet_rs::server::MakeIncoming;
-use tokio::net;
+use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::watch;
 
-use crate::config::{self, Config};
+use crate::config::{self, CrabLlamaConfig, TCPConfig};
 use crate::session;
 
 fn setup_llama_model(
@@ -46,16 +50,38 @@ fn dump_gguf_metadata(gf: &GGUFFile) {
     }
 }
 
-pub async fn serve(config: Config) -> anyhow::Result<()> {
-    let default_steps = config.llama.steps;
-    let (llama_model, conf) = setup_llama_model(config.llama)?;
-    println!("server listens on {}", config.listen_addr);
-    let mut incoming = net::UdpSocket::bind(config.listen_addr)
+pub async fn make_tcp_incoming(
+    listen_addr: SocketAddr,
+    config: TCPConfig,
+) -> anyhow::Result<impl Stream<Item = (impl PinReader, impl PinWriter)>> {
+    let listener = TcpListener::bind(listen_addr).await?;
+    listener.set_ttl(config.ttl)?;
+    let stream = TcpListenerStream::new(listener)
+        .map(|conn| tcp_split(conn.expect("failed to init tcp stream")));
+    Ok(stream)
+}
+
+pub async fn make_raknet_incoming(
+    listen_addr: SocketAddr,
+    config: raknet_rs::server::Config,
+) -> anyhow::Result<impl Stream<Item = (impl PinReader, impl PinWriter)>> {
+    let stream = UdpSocket::bind(listen_addr)
         .await?
-        .make_incoming(config.raknet);
+        .make_incoming(config)
+        .map(|(reader, writer)| (Box::pin(reader), writer));
+    Ok(stream)
+}
+
+pub async fn serve(
+    incoming: impl Stream<Item = (impl PinReader, impl PinWriter)>,
+    llama_config: CrabLlamaConfig,
+) -> anyhow::Result<()> {
+    let default_steps = llama_config.steps;
+    let (llama_model, conf) = setup_llama_model(llama_config)?;
     let (shutdown, watcher) = watch::channel("running");
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
+    tokio::pin!(incoming);
     loop {
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {

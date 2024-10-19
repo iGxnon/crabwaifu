@@ -1,7 +1,6 @@
 use std::io::Write;
 
 use crabwaifu_common::network::{Rx, Tx};
-use futures::StreamExt;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use tokio::time::Instant;
@@ -21,8 +20,8 @@ pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow
                 let start_at = Instant::now();
                 let mut tokens = 0;
                 let reply = client.stream(line).await?;
-                tokio::pin!(reply);
-                while let Some(ele) = reply.next().await {
+                #[futures_async_stream::for_await]
+                for ele in reply {
                     tokens += 1;
                     let token = ele?;
                     print!("{token}");
@@ -33,7 +32,7 @@ pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow
                 let tokens_per_second = tokens as f64 / elapsed.as_secs_f64();
                 if verbose {
                     println!(
-                        "\x1b[32m generated {} tokens, total {}ms, {} tokens/s \x1b[0m",
+                        "\x1b[32mgenerated {} tokens, total {}ms, {} tokens/s \x1b[0m",
                         tokens,
                         elapsed.as_millis(),
                         tokens_per_second

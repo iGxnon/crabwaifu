@@ -27,7 +27,6 @@ pub async fn connect_to(
         .await?;
     let (tx, flush_notify, close_notify) = spawn_flush_task(writer);
     let rx = Box::pin(rx);
-
     let client = Client {
         tx,
         rx,

@@ -8,6 +8,7 @@ license = { workspace = true }
 bincode = "1"
 bytes = "1"
 futures = { version = "0.3.5", default-features = false }
+futures-async-stream = "0.2"
 log = "0.4"
 raknet-rs = { workspace = true }
 serde = { version = "1", features = ["derive"] }

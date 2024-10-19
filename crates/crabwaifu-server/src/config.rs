@@ -6,8 +6,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub llama: CrabLlamaConfig,
-    pub raknet: server::Config,
     pub listen_addr: SocketAddr,
+
+    pub network: Network,
+    pub raknet: server::Config,
+    pub tcp: TCPConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Network {
+    Raknet,
+    TCP,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TCPConfig {
+    pub ttl: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,8 +50,10 @@ impl Default for Config {
                 threads: num_cpus::get(),
                 mlock: false,
             },
-            raknet: Default::default(),
             listen_addr: "0.0.0.0:8808".parse().unwrap(),
+            network: Network::Raknet,
+            raknet: Default::default(),
+            tcp: TCPConfig { ttl: 30 },
         }
     }
 }

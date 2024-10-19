@@ -10,8 +10,10 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 
 mod flusher;
+mod tcp;
 
 pub use flusher::spawn_flush_task;
+pub use tcp::{tcp_split, TcpListenerStream};
 
 use crate::proto::{chat, Packet, PacketID};
 
@@ -68,7 +70,7 @@ pub trait Rx: Send + Sync {
 
             let mut raw = self.recv_raw().await?;
             debug_assert_eq!(raw.get_u8(), 0xfe, "network unavailable");
-            
+
             let id = PacketID::from_u8(raw.get_u8());
             let pack = match id {
                 PacketID::InvalidPack => {

@@ -390,6 +390,7 @@ dependencies = [
  "bincode",
  "bytes",
  "futures",
+ "futures-async-stream",
  "log",
  "raknet-rs",
  "serde",
@@ -401,6 +402,7 @@ name = "crabwaifu-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "crabml",
  "crabml-llama2",
  "crabwaifu-common",
