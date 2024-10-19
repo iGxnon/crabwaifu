@@ -96,9 +96,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.89"
+version = "1.0.90"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86fdf8605db99b54d3cd748a44c6d04df638eb5dafb219b135d0149bd0db01f6"
+checksum = "37bf3594c4c988a53154954629820791dde498571819ae4ca50ca811e060cc95"
 
 [[package]]
 name = "ash"
@@ -310,7 +310,7 @@ dependencies = [
 [[package]]
 name = "crabml"
 version = "0.1.0"
-source = "git+https://github.com/iGxnon/crabml.git?branch=feat-send#689e30d138f5b5b658693876fa41179aecc368c9"
+source = "git+https://github.com/iGxnon/crabml.git?branch=feat-send#407ef9d453a794bd4758507512338d8bceb8583e"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -328,7 +328,7 @@ dependencies = [
 [[package]]
 name = "crabml-llama2"
 version = "0.1.0"
-source = "git+https://github.com/iGxnon/crabml.git?branch=feat-send#689e30d138f5b5b658693876fa41179aecc368c9"
+source = "git+https://github.com/iGxnon/crabml.git?branch=feat-send#407ef9d453a794bd4758507512338d8bceb8583e"
 dependencies = [
  "crabml",
  "crabml-vulkan",
@@ -341,7 +341,7 @@ dependencies = [
 [[package]]
 name = "crabml-vulkan"
 version = "0.1.0"
-source = "git+https://github.com/iGxnon/crabml.git?branch=feat-send#689e30d138f5b5b658693876fa41179aecc368c9"
+source = "git+https://github.com/iGxnon/crabml.git?branch=feat-send#407ef9d453a794bd4758507512338d8bceb8583e"
 dependencies = [
  "bytemuck",
  "crabml",
@@ -750,9 +750,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.159"
+version = "0.2.161"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "561d97a539a36e26a9a5fad1ea11a3039a67714694aaa379433e580854bc3dc5"
+checksum = "8e9489c2807c139ffd9c1794f4af0ebe86a828db53ecdc7fea2111d0fed085d1"
 
 [[package]]
 name = "libloading"
@@ -998,9 +998,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.87"
+version = "1.0.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3e4daa0dcf6feba26f985457cdf104d4b4256fc5a09547140f3631bb076b19a"
+checksum = "7c3a7fc5db1e57d5a779a352c8cdb57b29aa4c40cc69c3a68a7fedc815fbf2f9"
 dependencies = [
  "unicode-ident",
 ]
@@ -1164,9 +1164,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.128"
+version = "1.0.131"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ff5456707a1de34e7e37f2a6fd3d3f808c318259cbd01ab6377795054b483d8"
+checksum = "67d42a0bd4ac281beff598909bb56a86acaf979b84483e1c79c10dcaf98f8cf3"
 dependencies = [
  "itoa",
  "memchr",
