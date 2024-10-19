@@ -9,6 +9,7 @@
   - [x] TCP `Tx` `Rx`
   - [x] Raknet outperforms TCP in terms of latency!!
   - [ ] More metrics!
+    - [x] first token delay
 - [ ] ASR & TTS
   - [ ] HuggingFace with python
   - [ ] Contribute crates `crabml-tts` and `crabml-asr` ?

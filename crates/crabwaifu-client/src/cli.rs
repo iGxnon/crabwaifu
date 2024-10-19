@@ -18,11 +18,15 @@ pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow
                 }
                 rl.add_history_entry(line.as_str())?;
                 let start_at = Instant::now();
+                let mut first_token_recv = None;
                 let mut tokens = 0;
                 let reply = client.stream(line).await?;
                 #[futures_async_stream::for_await]
                 for ele in reply {
                     tokens += 1;
+                    if tokens == 1 {
+                        first_token_recv = Some(start_at.elapsed());
+                    }
                     let token = ele?;
                     print!("{token}");
                     std::io::stdout().flush().unwrap();
@@ -32,10 +36,11 @@ pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow
                 let tokens_per_second = tokens as f64 / elapsed.as_secs_f64();
                 if verbose {
                     println!(
-                        "\x1b[32mgenerated {} tokens, total {}ms, {} tokens/s \x1b[0m",
+                        "\x1b[32mgenerated {} tokens, total {}ms, {} tokens/s, received first token in {}ms \x1b[0m",
                         tokens,
                         elapsed.as_millis(),
-                        tokens_per_second
+                        tokens_per_second,
+                        first_token_recv.unwrap().as_millis()
                     );
                 }
             }
