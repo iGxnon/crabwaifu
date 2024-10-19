@@ -28,13 +28,13 @@ fn tcp_reader(mut reader: OwnedReadHalf) -> impl Stream<Item = Bytes> {
                     Ok(size) => {
                         let mut buffer = vec![0; size as usize];
                         if let Err(err) = reader.read_exact(&mut buffer).await {
-                            log::error!("tcp reader error: {err:?}");
+                            log::warn!("tcp reader error: {err:?}");
                             return;
                         }
                         yield Bytes::from(buffer);
                     }
                     Err(err) => {
-                        log::error!("tcp reader error: {err:?}");
+                        log::warn!("tcp reader error: {err:?}");
                         return;
                     }
                 }

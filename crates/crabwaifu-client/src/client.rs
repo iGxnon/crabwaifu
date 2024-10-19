@@ -2,12 +2,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail};
-use crabwaifu_common::network::{spawn_flush_task, Rx, Tx};
+use crabwaifu_common::network::{spawn_flush_task, tcp_split, Rx, Tx};
 use crabwaifu_common::proto::chat::{self, Message};
 use crabwaifu_common::proto::Packet;
 use futures::Stream;
 use raknet_rs::client::{self, ConnectTo};
-use tokio::net;
+use tokio::net::{self, TcpSocket};
 use tokio::sync::Notify;
 
 pub struct Client<T, R> {
@@ -17,7 +17,22 @@ pub struct Client<T, R> {
     close_notify: Arc<Notify>,
 }
 
-pub async fn connect_to(
+pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
+    let socket = TcpSocket::new_v4()?;
+    let stream = socket.connect(addr).await?;
+    let (rx, writer) = tcp_split(stream);
+    let (tx, flush_notify, close_notify) = spawn_flush_task(writer);
+    let rx = Box::pin(rx);
+    let client = Client {
+        tx,
+        rx,
+        flush_notify,
+        close_notify,
+    };
+    Ok(client)
+}
+
+pub async fn raknet_connect_to(
     addr: SocketAddr,
     config: client::Config,
 ) -> anyhow::Result<Client<impl Tx, impl Rx>> {
