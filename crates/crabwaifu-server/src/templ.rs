@@ -247,35 +247,35 @@ impl PromptBuilder {
     }
 }
 
-pub struct ChatReplyIterator<T> {
+pub struct ChatReplyIterator<'a, T> {
     inner: T,
     stop_marks: Vec<String>,
     stop_mark_matcher: MarkMatcher,
-    pub has_stop_mark: bool,
+    has_stop_mark: &'a mut bool,
 }
 
-impl<T> ChatReplyIterator<T>
+impl<'a, T> ChatReplyIterator<'a, T>
 where
     T: Iterator<Item = anyhow::Result<String>>,
 {
-    pub fn new(inner: T, stop_marks: Vec<String>) -> Self {
+    pub fn new(inner: T, stop_marks: Vec<String>, has_stop_mark: &'a mut bool) -> Self {
         Self {
             inner,
             stop_marks: stop_marks.clone(),
             stop_mark_matcher: MarkMatcher::new(stop_marks),
-            has_stop_mark: false,
+            has_stop_mark,
         }
     }
 }
 
-impl<T> Iterator for ChatReplyIterator<T>
+impl<'a, T> Iterator for ChatReplyIterator<'a, T>
 where
     T: Iterator<Item = anyhow::Result<String>>,
 {
     type Item = anyhow::Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.has_stop_mark {
+        if *self.has_stop_mark {
             return None;
         }
 
@@ -292,7 +292,7 @@ where
             };
 
             if self.stop_marks.contains(&token) {
-                self.has_stop_mark = true;
+                *self.has_stop_mark = true;
                 return None;
             }
 
@@ -665,9 +665,11 @@ mod test {
         .map(ToString::to_string)
         .map(Ok);
 
+        let mut has_stop_mark = false;
         let mut chat_iter = ChatReplyIterator::new(
             iter,
             vec!["<eos>".to_string(), "<|end_of_turn|>".to_string()],
+            &mut has_stop_mark,
         );
 
         assert_eq!(chat_iter.next().unwrap().unwrap(), "I");
@@ -675,13 +677,15 @@ mod test {
         assert_eq!(chat_iter.next().unwrap().unwrap(), "u");
         assert!(chat_iter.next().is_none());
         assert!(chat_iter.next().is_none());
-        assert!(chat_iter.has_stop_mark);
+        assert!(has_stop_mark);
 
         let iter = ["I", "love", "u"].iter().map(ToString::to_string).map(Ok);
 
+        has_stop_mark = false;
         let mut chat_iter = ChatReplyIterator::new(
             iter,
             vec!["<eos>".to_string(), "<|end_of_turn|>".to_string()],
+            &mut has_stop_mark,
         );
 
         assert_eq!(chat_iter.next().unwrap().unwrap(), "I");
@@ -689,6 +693,6 @@ mod test {
         assert_eq!(chat_iter.next().unwrap().unwrap(), "u");
         assert!(chat_iter.next().is_none());
         assert!(chat_iter.next().is_none());
-        assert!(!chat_iter.has_stop_mark);
+        assert!(!has_stop_mark);
     }
 }

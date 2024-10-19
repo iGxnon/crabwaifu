@@ -46,6 +46,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
         prompt: &str,
         stop_mark: &str,
         steps: usize,
+        has_stop_mark: &'a mut bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<String>> + 'a> {
         log::debug!("completion prompt: `{prompt}`");
         let bos = runner.kv_cache_len() == 0;
@@ -53,15 +54,30 @@ impl<T: Tx, R: Rx> Session<T, R> {
         let inner = runner
             .generate(pos, token, Some(steps))
             .map(|item| anyhow::Ok(item?));
-        Ok(ChatReplyIterator::new(inner, vec![stop_mark.to_string()]))
+        Ok(ChatReplyIterator::new(
+            inner,
+            vec![stop_mark.to_string()],
+            has_stop_mark,
+        ))
     }
 
     fn oneshot_completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
         let prompt = self.chat_templ.format(messages);
         let stop_mark = self.chat_templ.stop_mark();
-        let content = Self::generate(&mut self.llama_runner, &prompt, stop_mark, steps)?
-            .collect::<Result<Vec<_>, _>>()?
-            .concat();
+        let mut has_stop_mark = false;
+        let content = Self::generate(
+            &mut self.llama_runner,
+            &prompt,
+            stop_mark,
+            steps,
+            &mut has_stop_mark,
+        )?
+        .collect::<Result<Vec<_>, _>>()?
+        .concat();
+        if !has_stop_mark {
+            log::debug!("appended stop mark: {stop_mark}");
+            self.llama_runner.prefill(stop_mark, false, false)?;
+        }
         Ok(content)
     }
 
@@ -94,11 +110,14 @@ impl<T: Tx, R: Rx> Session<T, R> {
             Packet::ChatStreamRequest(request) => {
                 log::info!("got ChatStreamRequest");
                 let res: anyhow::Result<()> = try {
+                    let mut has_stop_mark = false;
+                    let stop_mark = self.chat_templ.stop_mark();
                     let mut iter = Self::generate(
                         &mut self.llama_runner,
                         &self.chat_templ.format_prompt(&request.prompt),
-                        self.chat_templ.stop_mark(),
+                        stop_mark,
                         self.default_steps,
+                        &mut has_stop_mark,
                     )?;
                     for ele in &mut iter {
                         let token = ele?;
@@ -108,6 +127,11 @@ impl<T: Tx, R: Rx> Session<T, R> {
                                 eos: false,
                             })
                             .await?;
+                    }
+                    drop(iter);
+                    if !has_stop_mark {
+                        log::debug!("appended stop mark: {stop_mark}");
+                        self.llama_runner.prefill(stop_mark, false, false)?;
                     }
                 };
                 let res = if let Err(err) = res {

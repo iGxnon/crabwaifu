@@ -28,3 +28,4 @@ max_channels = 64
 
 [tcp]
 ttl = 60
+nodelay = true

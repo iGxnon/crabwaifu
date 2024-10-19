@@ -23,6 +23,7 @@ pub enum Network {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TCPConfig {
     pub ttl: u32,
+    pub nodelay: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,7 +54,10 @@ impl Default for Config {
             listen_addr: "0.0.0.0:8808".parse().unwrap(),
             network: Network::Raknet,
             raknet: Default::default(),
-            tcp: TCPConfig { ttl: 30 },
+            tcp: TCPConfig {
+                ttl: 30,
+                nodelay: true,
+            },
         }
     }
 }

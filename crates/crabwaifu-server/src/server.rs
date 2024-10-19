@@ -56,8 +56,13 @@ pub async fn make_tcp_incoming(
 ) -> anyhow::Result<impl Stream<Item = (impl PinReader, impl PinWriter)>> {
     let listener = TcpListener::bind(listen_addr).await?;
     listener.set_ttl(config.ttl)?;
-    let stream = TcpListenerStream::new(listener)
-        .map(|conn| tcp_split(conn.expect("failed to init tcp stream")));
+    let stream = TcpListenerStream::new(listener).map(move |res| {
+        let stream = res.expect("failed to init tcp stream");
+        stream
+            .set_nodelay(config.nodelay)
+            .expect("cannot set nodelay");
+        tcp_split(stream)
+    });
     Ok(stream)
 }
 
