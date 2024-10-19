@@ -5,8 +5,11 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4.0", features = ["derive"] }
 crabwaifu-common = { workspace = true }
-env_logger = "0.11"
+futures = { version = "0.3", default-features = false }
+futures-async-stream = "0.2"
 raknet-rs = { workspace = true }
+rustyline = "14.0.0"
 tokio = { version = "1", features = ["full"] }

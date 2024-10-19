@@ -1,7 +1,7 @@
 - [x] Implementing raknet controller
 - [x] Chat API
   - [x] Oneshot chat
-  - [ ] Stream chat
+  - [x] Stream chat
 - [x] Chat template
 - [x] Session Manager based on Llama2Chat
 - [ ] Command line client

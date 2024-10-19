@@ -41,34 +41,28 @@ impl<T: Tx, R: Rx> Session<T, R> {
         }
     }
 
-    fn oneshot_completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
-        let prompt = self.chat_templ.format(messages);
-        log::debug!("completion prompt: `{prompt}`");
-        let content = self
-            .llama_runner
-            .prefill_and_generate(&prompt, steps)?
-            .collect::<Result<Vec<_>, _>>()?
-            .concat();
-        log::debug!("completion ended");
-        let stop_mark = self.chat_templ.stop_mark();
-        let trimmed = content
-            .split_once(stop_mark)
-            .map(|(valid, _)| valid.to_string())
-            .unwrap_or(content);
-        Ok(trimmed)
-    }
-
-    fn stream_completion<'a>(
+    fn generate<'a>(
         runner: &'a mut Llama2Runner<CpuTensor<'static>>,
         prompt: &str,
         stop_mark: &str,
         steps: usize,
-    ) -> anyhow::Result<ChatReplyIterator<impl Iterator<Item = anyhow::Result<String>> + 'a>> {
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<String>> + 'a> {
         log::debug!("completion prompt: `{prompt}`");
-        let iter = runner
-            .prefill_and_generate(prompt, steps)?
+        let bos = runner.kv_cache_len() == 0;
+        let (pos, _prev_token, token) = runner.prefill(prompt, bos, false)?;
+        let inner = runner
+            .generate(pos, token, Some(steps))
             .map(|item| anyhow::Ok(item?));
-        Ok(ChatReplyIterator::new(iter, vec![stop_mark.to_string()]))
+        Ok(ChatReplyIterator::new(inner, vec![stop_mark.to_string()]))
+    }
+
+    fn oneshot_completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
+        let prompt = self.chat_templ.format(messages);
+        let stop_mark = self.chat_templ.stop_mark();
+        let content = Self::generate(&mut self.llama_runner, &prompt, stop_mark, steps)?
+            .collect::<Result<Vec<_>, _>>()?
+            .concat();
+        Ok(content)
     }
 
     #[inline]
@@ -100,12 +94,10 @@ impl<T: Tx, R: Rx> Session<T, R> {
             Packet::ChatStreamRequest(request) => {
                 log::info!("got ChatStreamRequest");
                 let res: anyhow::Result<()> = try {
-                    let stop_mark = self.chat_templ.stop_mark();
-                    let runner = &mut self.llama_runner;
-                    let mut iter = Self::stream_completion(
-                        runner,
+                    let mut iter = Self::generate(
+                        &mut self.llama_runner,
                         &self.chat_templ.format_prompt(&request.prompt),
-                        stop_mark,
+                        self.chat_templ.stop_mark(),
                         self.default_steps,
                     )?;
                     for ele in &mut iter {
@@ -117,7 +109,6 @@ impl<T: Tx, R: Rx> Session<T, R> {
                             })
                             .await?;
                     }
-                    log::debug!("completion ended");
                 };
                 let res = if let Err(err) = res {
                     self.tx.send_pack(chat::StreamResponse {

@@ -1,48 +1,94 @@
-use std::io::{self, Write};
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Arc;
 
+use anyhow::{anyhow, bail};
 use crabwaifu_common::network::{spawn_flush_task, Rx, Tx};
-use crabwaifu_common::proto::{self, chat};
+use crabwaifu_common::proto::chat::{self, Message};
+use crabwaifu_common::proto::Packet;
+use futures::Stream;
 use raknet_rs::client::{self, ConnectTo};
 use tokio::net;
+use tokio::sync::Notify;
 
-pub async fn connect_to(addr: SocketAddr, config: client::Config) -> io::Result<()> {
+pub struct Client<T, R> {
+    tx: T,
+    rx: R,
+    flush_notify: Arc<Notify>,
+    close_notify: Arc<Notify>,
+}
+
+pub async fn connect_to(
+    addr: SocketAddr,
+    config: client::Config,
+) -> anyhow::Result<Client<impl Tx, impl Rx>> {
     let (rx, writer) = net::UdpSocket::bind("0.0.0.0:0")
         .await?
         .connect_to(addr, config)
         .await?;
     let (tx, flush_notify, close_notify) = spawn_flush_task(writer);
-    let mut rx = Box::pin(rx);
+    let rx = Box::pin(rx);
 
-    // TODO: use tx and rx to construct a client
+    let client = Client {
+        tx,
+        rx,
+        flush_notify,
+        close_notify,
+    };
+    Ok(client)
+}
 
-    println!("send message");
-    tx.send_pack(chat::StreamRequest {
-        prompt: "请问 1 + 1 等于多少？".to_string(),
-    })
-    .await
-    .unwrap();
-    flush_notify.notify_one();
+impl<T, R> Drop for Client<T, R> {
+    fn drop(&mut self) {
+        self.close_notify.notify_one();
+    }
+}
 
-    println!("wait for reply...");
-    println!("me: 请问 1 + 1 等于多少？");
-    std::io::stdout().flush().unwrap();
-    while let Ok(pack) = rx.recv_pack().await {
-        if let proto::Packet::ChatStreamResponse(resp) = pack {
-            std::io::stdout().flush().unwrap();
-            print!("{}", resp.partial);
-            if resp.eos {
-                println!();
-            }
+impl<T: Tx, R: Rx> Client<T, R> {
+    pub async fn oneshot(
+        &mut self,
+        messages: Vec<Message>,
+        steps: Option<usize>,
+    ) -> anyhow::Result<String> {
+        self.tx.send_pack(chat::Request { messages, steps }).await?;
+        self.flush_notify.notify_one();
+        let pack = self.rx.recv_pack().await?;
+        if let Packet::ChatResponse(resp) = pack {
+            Ok(resp.message.content)
+        } else {
+            bail!("no response")
         }
     }
 
-    println!("connection closed, wait for return in 10s");
-    close_notify.notify_one();
-    if (tokio::time::timeout(Duration::from_secs(10), close_notify.notified()).await).is_err() {
-        println!("error for waiting return");
+    pub async fn stream(
+        &mut self,
+        prompt: String,
+    ) -> anyhow::Result<impl Stream<Item = anyhow::Result<String>> + '_> {
+        self.tx.send_pack(chat::StreamRequest { prompt }).await?;
+        self.flush_notify.notify_one();
+        let stream = {
+            #[futures_async_stream::stream]
+            async move {
+                loop {
+                    let res = self.rx.recv_pack().await;
+                    match res {
+                        Ok(pack) => {
+                            if let Packet::ChatStreamResponse(resp) = pack {
+                                if resp.eos {
+                                    if !resp.partial.is_empty() {
+                                        println!("response error: {}", resp.partial);
+                                    }
+                                    return;
+                                }
+                                yield Ok(resp.partial);
+                            } else {
+                                yield Err(anyhow!("response irrupt!"));
+                            }
+                        }
+                        Err(err) => yield Err(err.into()),
+                    }
+                }
+            }
+        };
+        Ok(stream)
     }
-
-    Ok(())
 }
