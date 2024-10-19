@@ -38,10 +38,10 @@ pub trait Tx: Send + Sync {
         );
 
         async move {
-            let cap = bincode::serialized_size(&pack).unwrap_or_default() as usize + 1;
+            let cap = bincode::serialized_size(&pack).unwrap_or_default() as usize + 2;
             let mut writer = BytesMut::with_capacity(cap).writer();
             writer
-                .write_all(&[P::ID as u8])
+                .write_all(&[0xfe, P::ID as u8])
                 .expect("failed to write ID into buffer");
             bincode::serialize_into(&mut writer, &pack)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
@@ -67,6 +67,8 @@ pub trait Rx: Send + Sync {
             }
 
             let mut raw = self.recv_raw().await?;
+            debug_assert_eq!(raw.get_u8(), 0xfe, "network unavailable");
+            
             let id = PacketID::from_u8(raw.get_u8());
             let pack = match id {
                 PacketID::InvalidPack => {
@@ -107,6 +109,6 @@ impl<R: PinReader> Rx for R {
     async fn recv_raw(&mut self) -> io::Result<Bytes> {
         self.next()
             .await
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "connection closed"))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionAborted, "connection closed"))
     }
 }

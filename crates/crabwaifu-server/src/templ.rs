@@ -10,8 +10,8 @@ use crabwaifu_common::proto::chat::{self, Message};
 pub enum ChatTemplate {
     Llama2,
     Llama3,
-    ChatML,
     Gemma,
+    ChatML,
 }
 
 impl ChatTemplate {
@@ -50,6 +50,18 @@ impl ChatTemplate {
             builder.feed(msg);
         }
         builder.finish()
+    }
+
+    pub fn format_prompt(&self, prompt: &str) -> String {
+        match self {
+            ChatTemplate::Llama2 => format!("[INST] {} [/INST][[INST]]", prompt),
+            ChatTemplate::Llama3 => format!(
+                "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                prompt
+            ),
+            ChatTemplate::Gemma => format!("<start_of_turn>user\n{}<end_of_turn><start_of_turn>model\n", prompt),
+            ChatTemplate::ChatML => format!("<|im_start|>user\n{}<|im_end|><|im_start|>assistant\n", prompt),
+        }
     }
 }
 
@@ -235,11 +247,126 @@ impl PromptBuilder {
     }
 }
 
+pub struct ChatReplyIterator<T> {
+    inner: T,
+    stop_marks: Vec<String>,
+    stop_mark_matcher: MarkMatcher,
+    pub has_stop_mark: bool,
+}
+
+impl<T> ChatReplyIterator<T>
+where
+    T: Iterator<Item = anyhow::Result<String>>,
+{
+    pub fn new(inner: T, stop_marks: Vec<String>) -> Self {
+        Self {
+            inner,
+            stop_marks: stop_marks.clone(),
+            stop_mark_matcher: MarkMatcher::new(stop_marks),
+            has_stop_mark: false,
+        }
+    }
+}
+
+impl<T> Iterator for ChatReplyIterator<T>
+where
+    T: Iterator<Item = anyhow::Result<String>>,
+{
+    type Item = anyhow::Result<String>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.has_stop_mark {
+            return None;
+        }
+
+        loop {
+            let token = match self.inner.next() {
+                None => return None,
+                Some(Err(err)) => return Some(Err(err)),
+                Some(Ok(token)) => token,
+            };
+
+            let token = match self.stop_mark_matcher.push(token) {
+                None => continue,
+                Some(token) => token,
+            };
+
+            if self.stop_marks.contains(&token) {
+                self.has_stop_mark = true;
+                return None;
+            }
+
+            return Some(Ok(token));
+        }
+    }
+}
+
+pub struct MarkMatcher {
+    state: MarkMatchState,
+    buf: String,
+    marks: Vec<String>,
+}
+
+pub enum MarkMatchState {
+    Inactive,
+    Active,
+}
+
+impl MarkMatcher {
+    pub fn new(marks: Vec<String>) -> Self {
+        Self {
+            state: MarkMatchState::Inactive,
+            buf: String::new(),
+            marks,
+        }
+    }
+
+    pub fn push(&mut self, token: String) -> Option<String> {
+        match self.state {
+            MarkMatchState::Inactive => {
+                // exact match, do not change state
+                if self.marks.contains(&token) {
+                    return Some(token);
+                }
+
+                // got any partial match, change state to active, and push the token
+                // to the buffer, and wait for the rest of the mark.
+                if self.marks.iter().any(|m| m.starts_with(&token)) {
+                    self.state = MarkMatchState::Active;
+                    self.buf = token;
+                    return None;
+                }
+
+                // no match, return the token directly
+                Some(token)
+            }
+            MarkMatchState::Active => {
+                self.buf.push_str(&token);
+
+                // exact match, change state to inactive, and return the buffer
+                if self.marks.contains(&self.buf) {
+                    self.state = MarkMatchState::Inactive;
+                    return Some(self.buf.clone());
+                }
+
+                // not match anymore, return the buffer directly
+                if !self.marks.iter().any(|m| m.starts_with(&self.buf)) {
+                    self.state = MarkMatchState::Inactive;
+                    return Some(self.buf.clone());
+                }
+
+                // partial match, wait for the rest of the mark
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crabwaifu_common::proto::chat::{Message, Role};
 
-    use super::PromptBuilder;
+    use super::{ChatReplyIterator, PromptBuilder};
 
     #[test]
     fn test_llama2_builder_works() {
@@ -527,5 +654,41 @@ mod test {
             let prompt = builder.finish();
             assert_eq!(prompt, "<|im_start|>user\nI ams the user message 1<|im_end|><|im_start|>assistant\nI ams the assistant message 1<|im_end|><|im_start|>user\nI ams the user message 2<|im_end|><|im_start|>assistant\nI ams the assistant message 2<|im_end|><|im_start|>user\nI ams the user message 3<|im_end|><|im_start|>assistant\n");
         }
+    }
+
+    #[test]
+    fn test_chat_reply_iter() {
+        let iter = [
+            "I", "love", "u", "<|end_of", "_turn|>", "<e", "os>", "I", "hate", "you",
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .map(Ok);
+
+        let mut chat_iter = ChatReplyIterator::new(
+            iter,
+            vec!["<eos>".to_string(), "<|end_of_turn|>".to_string()],
+        );
+
+        assert_eq!(chat_iter.next().unwrap().unwrap(), "I");
+        assert_eq!(chat_iter.next().unwrap().unwrap(), "love");
+        assert_eq!(chat_iter.next().unwrap().unwrap(), "u");
+        assert!(chat_iter.next().is_none());
+        assert!(chat_iter.next().is_none());
+        assert!(chat_iter.has_stop_mark);
+
+        let iter = ["I", "love", "u"].iter().map(ToString::to_string).map(Ok);
+
+        let mut chat_iter = ChatReplyIterator::new(
+            iter,
+            vec!["<eos>".to_string(), "<|end_of_turn|>".to_string()],
+        );
+
+        assert_eq!(chat_iter.next().unwrap().unwrap(), "I");
+        assert_eq!(chat_iter.next().unwrap().unwrap(), "love");
+        assert_eq!(chat_iter.next().unwrap().unwrap(), "u");
+        assert!(chat_iter.next().is_none());
+        assert!(chat_iter.next().is_none());
+        assert!(!chat_iter.has_stop_mark);
     }
 }

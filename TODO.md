@@ -1,9 +1,12 @@
 - [x] Implementing raknet controller
 - [x] Chat API
+  - [x] Oneshot chat
+  - [ ] Stream chat
 - [x] Chat template
 - [x] Session Manager based on Llama2Chat
 - [ ] Command line client
 - [ ] Micro benchmark
+  - [ ] TCP `Tx` `Rx`
 - [ ] ASR & TTS
   - [ ] HuggingFace with python
   - [ ] Contribute crates `crabml-tts` and `crabml-asr` ?

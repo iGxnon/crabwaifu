@@ -101,6 +101,8 @@ pub mod chat {
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct StreamResponse {
         pub partial: String,
+        // when it is true, then the `partial` represents the error message,
+        // empty `partial`  means there is no error
         pub eos: bool,
     }
 

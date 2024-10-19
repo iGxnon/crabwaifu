@@ -18,8 +18,6 @@ pub struct CrabLlamaConfig {
     pub steps: usize,
     /// The probability of sampling from the top-p.
     pub probability: f32,
-    /// The system prompt
-    pub prompt: Option<String>,
     pub temperature: f32,
     pub threads: usize,
     /// The mmap memory lock option, reducing the swap overhead
@@ -33,7 +31,6 @@ impl Default for Config {
                 model: "./llama.gguf".to_string(),
                 steps: 300,
                 probability: 0.9,
-                prompt: None,
                 temperature: 1.0,
                 threads: num_cpus::get(),
                 mlock: false,

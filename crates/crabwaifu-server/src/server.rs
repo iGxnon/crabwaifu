@@ -49,7 +49,7 @@ fn dump_gguf_metadata(gf: &GGUFFile) {
 pub async fn serve(config: Config) -> anyhow::Result<()> {
     let default_steps = config.llama.steps;
     let (llama_model, conf) = setup_llama_model(config.llama)?;
-    log::info!("server listens on {}", config.listen_addr);
+    println!("server listens on {}", config.listen_addr);
     let mut incoming = net::UdpSocket::bind(config.listen_addr)
         .await?
         .make_incoming(config.raknet);
@@ -66,7 +66,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
                 tokio::task::spawn(session.run(watcher.clone()));
             }
             _ = &mut ctrl_c => {
-                log::info!("received ctrl-c signal, press again to force shutdown");
+                eprintln!(" received ctrl-c signal, press again to force shutdown");
                 drop(watcher);
                 if shutdown.receiver_count() == 0 {
                     break;

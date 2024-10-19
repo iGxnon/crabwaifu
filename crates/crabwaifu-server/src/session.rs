@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,7 +9,7 @@ use crabwaifu_common::proto::chat::Message;
 use crabwaifu_common::proto::{chat, Packet};
 use tokio::sync::{watch, Notify};
 
-use crate::templ::ChatTemplate;
+use crate::templ::{ChatReplyIterator, ChatTemplate};
 
 pub struct Session<T, R> {
     tx: T,
@@ -40,42 +41,46 @@ impl<T: Tx, R: Rx> Session<T, R> {
         }
     }
 
-    async fn completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
-        log::info!("processing completion...");
+    fn oneshot_completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
         let prompt = self.chat_templ.format(messages);
-        log::trace!("completion prompt: `{prompt}`");
+        log::debug!("completion prompt: `{prompt}`");
         let content = self
             .llama_runner
             .prefill_and_generate(&prompt, steps)?
             .collect::<Result<Vec<_>, _>>()?
             .concat();
+        log::debug!("completion ended");
         let stop_mark = self.chat_templ.stop_mark();
-        let mut need_stop_mark = false;
         let trimmed = content
             .split_once(stop_mark)
-            .map(|(valid, _)| {
-                need_stop_mark = true;
-                valid.to_string()
-            })
+            .map(|(valid, _)| valid.to_string())
             .unwrap_or(content);
-        if need_stop_mark {
-            log::trace!("appending stop mark {stop_mark}");
-            self.llama_runner.prefill(stop_mark, false, false)?;
-        }
         Ok(trimmed)
+    }
+
+    fn stream_completion<'a>(
+        runner: &'a mut Llama2Runner<CpuTensor<'static>>,
+        prompt: &str,
+        stop_mark: &str,
+        steps: usize,
+    ) -> anyhow::Result<ChatReplyIterator<impl Iterator<Item = anyhow::Result<String>> + 'a>> {
+        log::debug!("completion prompt: `{prompt}`");
+        let iter = runner
+            .prefill_and_generate(prompt, steps)?
+            .map(|item| anyhow::Ok(item?));
+        Ok(ChatReplyIterator::new(iter, vec![stop_mark.to_string()]))
     }
 
     #[inline]
     async fn handle_pack(&mut self, pack: Packet) {
         match pack {
             Packet::ChatRequest(request) => {
+                log::info!("got ChatRequest");
                 let res: anyhow::Result<()> = try {
-                    let content = self
-                        .completion(
-                            &request.messages,
-                            request.steps.unwrap_or(self.default_steps),
-                        )
-                        .await?;
+                    let content = self.oneshot_completion(
+                        &request.messages,
+                        request.steps.unwrap_or(self.default_steps),
+                    )?;
                     self.tx
                         .send_pack(chat::Response {
                             message: Message {
@@ -93,7 +98,42 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 self.flush_notify.notify_one();
             }
             Packet::ChatStreamRequest(request) => {
-                todo!()
+                log::info!("got ChatStreamRequest");
+                let res: anyhow::Result<()> = try {
+                    let stop_mark = self.chat_templ.stop_mark();
+                    let runner = &mut self.llama_runner;
+                    let mut iter = Self::stream_completion(
+                        runner,
+                        &self.chat_templ.format_prompt(&request.prompt),
+                        stop_mark,
+                        self.default_steps,
+                    )?;
+                    for ele in &mut iter {
+                        let token = ele?;
+                        self.tx
+                            .send_pack(chat::StreamResponse {
+                                partial: token,
+                                eos: false,
+                            })
+                            .await?;
+                    }
+                    log::debug!("completion ended");
+                };
+                let res = if let Err(err) = res {
+                    self.tx.send_pack(chat::StreamResponse {
+                        partial: err.to_string(),
+                        eos: true,
+                    })
+                } else {
+                    self.tx.send_pack(chat::StreamResponse {
+                        partial: String::new(),
+                        eos: true,
+                    })
+                }
+                .await;
+                if let Err(err) = res {
+                    log::error!("error: {err}");
+                }
             }
             _ => {
                 log::warn!("got unexpected packet on server {pack:?}");
@@ -109,20 +149,27 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 res = self.rx.recv_pack() => match res {
                     Ok(pack) => self.handle_pack(pack).await,
                     Err(err) => {
+                        if err.kind() == io::ErrorKind::ConnectionAborted {
+                            log::info!("connection closed by remote");
+                            break;
+                        }
                         log::error!("error in recv packets {err}")
                     },
                 },
                 _ = &mut signal => {
-                    // notify that we'll gonna to shutdown
-                    self.close_notify.notify_one();
-                    // wait for flusher response in 10s
-                    if tokio::time::timeout(Duration::from_secs(10), self.close_notify.notified()).await.is_err() {
-                        log::warn!("cannot shutdown session background task `flusher` in 10s, skip it");
-                    }
-                    // TODO: wait all background task of this session to be done and return
                     break;
                 }
             }
         }
+        // notify that we'll gonna to shutdown
+        self.close_notify.notify_one();
+        // wait for flusher response in 10s
+        if tokio::time::timeout(Duration::from_secs(10), self.close_notify.notified())
+            .await
+            .is_err()
+        {
+            log::warn!("cannot shutdown session background task `flusher` in 10s, skip it");
+        }
+        // TODO: wait all background task of this session to be done and return
     }
 }
