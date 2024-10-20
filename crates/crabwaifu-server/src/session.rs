@@ -7,6 +7,7 @@ use crabml_llama2::llama2::Llama2Runner;
 use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
 use crabwaifu_common::proto::{chat, Packet};
+use crabwaifu_common::utils::TimeoutWrapper;
 use tokio::sync::{watch, Notify};
 
 use crate::templ::{ChatReplyIterator, ChatTemplate};
@@ -48,7 +49,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
         steps: usize,
         has_stop_mark: &'a mut bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<String>> + 'a> {
-        log::debug!("completion prompt: `{prompt}`");
+        log::debug!("completing prompt: `{prompt}`");
         let bos = runner.kv_cache_len() == 0;
         let (pos, _prev_token, token) = runner.prefill(prompt, bos, false)?;
         let inner = runner
@@ -159,31 +160,31 @@ impl<T: Tx, R: Rx> Session<T, R> {
     pub async fn run(mut self, mut shutdown: watch::Receiver<&'static str>) {
         let signal = shutdown.changed();
         tokio::pin!(signal);
-        loop {
+        let wait = loop {
             tokio::select! {
                 res = self.rx.recv_pack() => match res {
                     Ok(pack) => self.handle_pack(pack).await,
                     Err(err) => {
                         if err.kind() == io::ErrorKind::ConnectionAborted {
                             log::info!("connection closed by remote");
-                            break;
+                            break false;
                         }
                         log::error!("error in recv packets {err}")
                     },
                 },
                 _ = &mut signal => {
-                    break;
+                    break true;
                 }
             }
-        }
+        };
+        let wait_timeout = Duration::from_secs(10);
         // notify that we'll gonna to shutdown
         self.close_notify.notify_one();
-        // wait for flusher response in 10s
-        if tokio::time::timeout(Duration::from_secs(10), self.close_notify.notified())
-            .await
-            .is_err()
-        {
-            log::warn!("cannot shutdown session background task `flusher` in 10s, skip it");
+        // wait for flusher closing
+        let _ = self.close_notify.notified().timeout(wait_timeout).await;
+        // if we shutdown the server, then wait for the last 2MSL
+        if wait {
+            let _ = self.close_notify.notified().timeout(wait_timeout).await;
         }
         // TODO: wait all background task of this session to be done and return
     }

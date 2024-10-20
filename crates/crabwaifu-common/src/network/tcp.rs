@@ -9,17 +9,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
-pub fn tcp_split(
-    stream: TcpStream,
-) -> (
-    impl Stream<Item = Bytes>,
-    impl Sink<Message, Error = io::Error>,
-) {
+use super::{PinReader, PinWriter};
+
+pub fn tcp_split(stream: TcpStream) -> (impl PinReader, impl PinWriter) {
     let (reader, writer) = stream.into_split();
     (tcp_reader(reader), tcp_writer(writer))
 }
 
-fn tcp_reader(mut reader: OwnedReadHalf) -> impl Stream<Item = Bytes> {
+fn tcp_reader(mut reader: OwnedReadHalf) -> impl PinReader {
     let stream = {
         #[futures_async_stream::stream]
         async move {
@@ -44,7 +41,7 @@ fn tcp_reader(mut reader: OwnedReadHalf) -> impl Stream<Item = Bytes> {
     Box::pin(stream)
 }
 
-fn tcp_writer(writer: OwnedWriteHalf) -> impl Sink<Message, Error = io::Error> {
+fn tcp_writer(writer: OwnedWriteHalf) -> impl PinWriter {
     TcpWriter(writer)
 }
 

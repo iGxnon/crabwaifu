@@ -3,7 +3,8 @@ use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use crabwaifu_client::cli;
-use crabwaifu_client::client::{raknet_connect_to, tcp_connect_to};
+use crabwaifu_client::client::{raknet_connect_to, tcp_connect_to, Client};
+use crabwaifu_common::network::{Rx, Tx};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -37,6 +38,12 @@ enum Command {
     Cli,
 }
 
+async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Result<()> {
+    match args.command {
+        Command::Cli => cli::run(client, args.verbose).await,
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -44,15 +51,18 @@ async fn main() -> anyhow::Result<()> {
         Network::Raknet => {
             let mut client =
                 raknet_connect_to(args.endpoint, raknet_rs::client::Config::default()).await?;
-            match args.command {
-                Command::Cli => cli::run(&mut client, args.verbose).await,
+            if let Err(err) = run(&mut client, args).await {
+                eprintln!("error: {err}");
             }
+            client.finish().await;
         }
         Network::Tcp => {
             let mut client = tcp_connect_to(args.endpoint).await?;
-            match args.command {
-                Command::Cli => cli::run(&mut client, args.verbose).await,
+            if let Err(err) = run(&mut client, args).await {
+                eprintln!("error: {err}");
             }
+            client.finish().await;
         }
     }
+    Ok(())
 }

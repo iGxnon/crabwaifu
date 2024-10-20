@@ -10,3 +10,5 @@ pub mod proto;
 
 /// Common network part
 pub mod network;
+
+pub mod utils;

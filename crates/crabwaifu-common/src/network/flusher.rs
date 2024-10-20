@@ -10,6 +10,7 @@ use tokio::sync::{mpsc, Notify};
 use tokio::time;
 
 use super::PinWriter;
+use crate::utils::TimeoutWrapper;
 
 // Flusher can automatically adjust the flush delay, below is the range of adjustment
 const MIN_FLUSH_DELAY_US: u64 = 2_000; // 2ms -- The fastest time for the server to process a small piece of data.
@@ -17,7 +18,8 @@ const MAX_FLUSH_DELAY_US: u64 = 512_000; // 512ms -- The maximum acceptable RTO
 
 // Default options
 const DEFAULT_BUF_SIZE: usize = 1024;
-const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_2MSL: Duration = Duration::from_secs(6);
 
 /// Spawn the flush task and return the handles of it
 pub fn spawn_flush_task(
@@ -53,7 +55,25 @@ pub fn spawn_flush_task(
             close_notify_clone.notify_one();
             return;
         }
-        log::info!("flusher closed gracefully");
+        // notify the waker that we have closed the flusher
+        close_notify_clone.notify_one();
+
+        log::info!("flusher closed, wait 2MSL...");
+        let last_2msl = tokio::time::sleep(DEFAULT_2MSL);
+        tokio::pin!(last_2msl);
+        loop {
+            tokio::select! {
+                _ = flusher.wait() => {
+                    if let Err(err) = flusher.flush().await {
+                        log::error!("unexpected flush error {err}, terminating flush task gracefully");
+                        break
+                    }
+                }
+                _ = &mut last_2msl => break,
+            }
+        }
+
+        // notify twice the waker that we have shutdown the flusher
         close_notify_clone.notify_one();
     });
 
@@ -117,6 +137,6 @@ impl<W: PinWriter> Flusher<W> {
     /// Close the writer with timeout
     #[inline(always)]
     async fn close(&mut self) -> io::Result<()> {
-        time::timeout(DEFAULT_CLOSE_TIMEOUT, self.writer.close()).await?
+        self.writer.close().timeout(DEFAULT_CLOSE_TIMEOUT).await?
     }
 }

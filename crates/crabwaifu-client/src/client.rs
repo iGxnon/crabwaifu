@@ -1,10 +1,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, bail};
 use crabwaifu_common::network::{spawn_flush_task, tcp_split, Rx, Tx};
 use crabwaifu_common::proto::chat::{self, Message};
 use crabwaifu_common::proto::Packet;
+use crabwaifu_common::utils::TimeoutWrapper;
 use futures::Stream;
 use raknet_rs::client::{self, ConnectTo};
 use tokio::net::{self, TcpSocket};
@@ -15,6 +17,7 @@ pub struct Client<T, R> {
     rx: R,
     flush_notify: Arc<Notify>,
     close_notify: Arc<Notify>,
+    is_raknet: bool,
 }
 
 pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
@@ -28,6 +31,7 @@ pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, 
         rx,
         flush_notify,
         close_notify,
+        is_raknet: false,
     };
     Ok(client)
 }
@@ -47,16 +51,12 @@ pub async fn raknet_connect_to(
         rx,
         flush_notify,
         close_notify,
+        is_raknet: true,
     };
     Ok(client)
 }
 
-impl<T, R> Drop for Client<T, R> {
-    fn drop(&mut self) {
-        self.close_notify.notify_one();
-    }
-}
-
+// TODO: concurrent client
 impl<T: Tx, R: Rx> Client<T, R> {
     pub async fn oneshot(
         &mut self,
@@ -104,5 +104,16 @@ impl<T: Tx, R: Rx> Client<T, R> {
             }
         };
         Ok(stream)
+    }
+
+    pub async fn finish(&self) {
+        self.close_notify.notify_one();
+        let shutdown_timeout = Duration::from_secs(5);
+        // wait for flusher closing
+        let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
+        if self.is_raknet {
+            // wait for flusher shutdown
+            let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
+        }
     }
 }
