@@ -11,26 +11,35 @@ use futures::Stream;
 use raknet_rs::client::{self, ConnectTo};
 use tokio::net::{self, TcpSocket};
 use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
 pub struct Client<T, R> {
     tx: T,
     rx: R,
     flush_notify: Arc<Notify>,
     close_notify: Arc<Notify>,
+    flush_task: JoinHandle<()>,
     is_raknet: bool,
+}
+
+impl<T, R> Drop for Client<T, R> {
+    fn drop(&mut self) {
+        self.flush_task.abort();
+    }
 }
 
 pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
     let socket = TcpSocket::new_v4()?;
     let stream = socket.connect(addr).await?;
     let (rx, writer) = tcp_split(stream);
-    let (tx, flush_notify, close_notify) = spawn_flush_task(writer);
+    let (tx, flush_notify, close_notify, flush_task) = spawn_flush_task(writer);
     let rx = Box::pin(rx);
     let client = Client {
         tx,
         rx,
         flush_notify,
         close_notify,
+        flush_task,
         is_raknet: false,
     };
     Ok(client)
@@ -44,19 +53,20 @@ pub async fn raknet_connect_to(
         .await?
         .connect_to(addr, config)
         .await?;
-    let (tx, flush_notify, close_notify) = spawn_flush_task(writer);
+    let (tx, flush_notify, close_notify, flush_task) = spawn_flush_task(writer);
     let rx = Box::pin(rx);
     let client = Client {
         tx,
         rx,
         flush_notify,
         close_notify,
+        flush_task,
         is_raknet: true,
     };
     Ok(client)
 }
 
-// TODO: concurrent client
+// TODO: concurrent client & keep alive
 impl<T: Tx, R: Rx> Client<T, R> {
     pub async fn oneshot(
         &mut self,
@@ -69,7 +79,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         if let Packet::ChatResponse(resp) = pack {
             Ok(resp.message.content)
         } else {
-            bail!("no response")
+            bail!("response interrupt")
         }
     }
 
@@ -95,7 +105,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
                                 }
                                 yield Ok(resp.partial);
                             } else {
-                                yield Err(anyhow!("response irrupt!"));
+                                yield Err(anyhow!("response interrupt"));
                             }
                         }
                         Err(err) => yield Err(err.into()),
@@ -113,6 +123,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
         if self.is_raknet {
             // wait for flusher shutdown
+            eprintln!("wait 2MSL...");
             let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
         }
     }

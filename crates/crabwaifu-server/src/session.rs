@@ -9,6 +9,7 @@ use crabwaifu_common::proto::chat::Message;
 use crabwaifu_common::proto::{chat, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use tokio::sync::{watch, Notify};
+use tokio::task::JoinHandle;
 
 use crate::templ::{ChatReplyIterator, ChatTemplate};
 
@@ -20,6 +21,13 @@ pub struct Session<T, R> {
     llama_runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
     default_steps: usize,
+    flush_task: JoinHandle<()>,
+}
+
+impl<T, R> Drop for Session<T, R> {
+    fn drop(&mut self) {
+        self.flush_task.abort();
+    }
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
@@ -30,6 +38,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
         close_notify: Arc<Notify>,
         llama_runner: Llama2Runner<CpuTensor<'static>>,
         default_steps: usize,
+        flusher_task: JoinHandle<()>,
     ) -> Self {
         Self {
             tx,
@@ -39,6 +48,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             chat_templ: ChatTemplate::heuristic_guess(&llama_runner),
             llama_runner,
             default_steps,
+            flush_task: flusher_task,
         }
     }
 
@@ -184,8 +194,10 @@ impl<T: Tx, R: Rx> Session<T, R> {
         let _ = self.close_notify.notified().timeout(wait_timeout).await;
         // if we shutdown the server, then wait for the last 2MSL
         if wait {
+            log::info!("wait 2MSL...");
             let _ = self.close_notify.notified().timeout(wait_timeout).await;
         }
+        log::info!("session shutdown");
         // TODO: wait all background task of this session to be done and return
     }
 }

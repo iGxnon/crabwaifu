@@ -20,3 +20,4 @@
   - [ ] Arduino ?
   - [ ] Esp32 ?
   - [ ] K210 ?
+- Concurrent session ?

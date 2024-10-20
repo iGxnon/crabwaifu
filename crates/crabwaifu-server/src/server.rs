@@ -90,10 +90,10 @@ pub async fn serve(
     loop {
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
-                let (tx, flush_notify, close_notify) = spawn_flush_task(writer);
+                let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
                 let runner = Llama2Runner::new(&llama_model, conf.seq_len, true)
                     .expect("llama runner cannot be initialized");
-                let session = session::Session::new(tx, Box::pin(rx), flush_notify, close_notify, runner, default_steps);
+                let session = session::Session::new(tx, Box::pin(rx), flush_notify, close_notify, runner, default_steps, task);
                 tokio::task::spawn(session.run(watcher.clone()));
             }
             _ = &mut ctrl_c => {
@@ -110,7 +110,7 @@ pub async fn serve(
                     }
                     _ = ctrl_c_c => {
                         log::warn!("force shutdown");
-                        return Ok(());
+                        break;
                     }
                 }
             }

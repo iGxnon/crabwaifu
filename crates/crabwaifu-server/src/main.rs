@@ -3,7 +3,7 @@ use std::env::args;
 use crabwaifu_server::config::{Config, Network};
 use crabwaifu_server::server::{make_raknet_incoming, make_tcp_incoming, serve};
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
         .transpose()
         .unwrap()
         .unwrap_or_default();
-    log::trace!(
+    log::debug!(
         "server configuration: \n{}",
         serde_json::to_string_pretty(&config).unwrap()
     );
