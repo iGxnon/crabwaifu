@@ -90,11 +90,6 @@ impl<W: PinWriter> Flusher<W> {
 
     #[inline(always)]
     async fn flush(&mut self) -> io::Result<()> {
-        // Drain buffer
-        debug_assert!(
-            !self.buffer.is_closed(),
-            "channel must not be closed while flushing"
-        );
         // non-blocking recv
         while let Ok(msg) = self.buffer.try_recv() {
             self.writer.feed(msg).await?;

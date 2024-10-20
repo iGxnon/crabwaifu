@@ -69,7 +69,7 @@ pub trait Rx: Send + Sync {
             }
 
             let mut raw = self.recv_raw().await?;
-            debug_assert_eq!(raw.get_u8(), 0xfe, "network unavailable");
+            assert_eq!(raw.get_u8(), 0xfe, "network unavailable");
 
             let id = PacketID::from_u8(raw.get_u8());
             let pack = match id {
