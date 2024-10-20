@@ -285,6 +285,7 @@ where
                 Some(Err(err)) => return Some(Err(err)),
                 Some(Ok(token)) => token,
             };
+            log::trace!("got token `{token}` from raw iterator");
 
             let token = match self.stop_mark_matcher.push(token) {
                 None => continue,
@@ -292,6 +293,7 @@ where
             };
 
             if self.stop_marks.contains(&token) {
+                log::debug!("detected stop mark, cut iterator");
                 *self.has_stop_mark = true;
                 return None;
             }
@@ -324,16 +326,19 @@ impl MarkMatcher {
     pub fn push(&mut self, token: String) -> Option<String> {
         match self.state {
             MarkMatchState::Inactive => {
+                // sometime the eos token may start with empty spaces
+                let trimmed = token.trim_start().to_string();
+
                 // exact match, do not change state
-                if self.marks.contains(&token) {
-                    return Some(token);
+                if self.marks.contains(&trimmed) {
+                    return Some(trimmed);
                 }
 
                 // got any partial match, change state to active, and push the token
                 // to the buffer, and wait for the rest of the mark.
-                if self.marks.iter().any(|m| m.starts_with(&token)) {
+                if self.marks.iter().any(|m| m.starts_with(&trimmed)) {
                     self.state = MarkMatchState::Active;
-                    self.buf = token;
+                    self.buf = trimmed;
                     return None;
                 }
 
@@ -341,12 +346,14 @@ impl MarkMatcher {
                 Some(token)
             }
             MarkMatchState::Active => {
-                self.buf.push_str(&token);
-
-                // exact match, change state to inactive, and return the buffer
-                if self.marks.contains(&self.buf) {
-                    self.state = MarkMatchState::Inactive;
-                    return Some(self.buf.clone());
+                for ch in token.chars() {
+                    // check every char in token in case of flaw tail
+                    self.buf.push(ch);
+                    // exact match, change state to inactive, and return the buffer
+                    if self.marks.contains(&self.buf) {
+                        self.state = MarkMatchState::Inactive;
+                        return Some(self.buf.clone());
+                    }
                 }
 
                 // not match anymore, return the buffer directly
@@ -694,5 +701,32 @@ mod test {
         assert!(chat_iter.next().is_none());
         assert!(chat_iter.next().is_none());
         assert!(!has_stop_mark);
+
+        let iter = "I am a large language model, trained by Google. I am designed to be informative and comprehensive, and I can help you with a wide range of tasks, including answering questions, providing information, and generating text.".split(' ').map(ToString::to_string).map(Ok);
+        has_stop_mark = false;
+        let chat_iter = ChatReplyIterator::new(
+            iter.chain(
+                [
+                    "    <",
+                    "end",
+                    "_",
+                    "of",
+                    "_",
+                    "turn",
+                    "><",
+                    "start_of_turn>",
+                    "bad_message",
+                ]
+                .map(ToString::to_string)
+                .map(Ok),
+            ),
+            vec!["<end_of_turn>".to_string()],
+            &mut has_stop_mark,
+        );
+        for token in chat_iter {
+            assert_ne!(token.as_deref().unwrap(), "<end_of_turn>");
+            assert_ne!(token.as_deref().unwrap(), "bad_message");
+        }
+        assert!(has_stop_mark);
     }
 }
