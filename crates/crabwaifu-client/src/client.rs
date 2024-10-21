@@ -66,7 +66,6 @@ pub async fn raknet_connect_to(
     Ok(client)
 }
 
-// TODO: concurrent client & keep alive
 impl<T: Tx, R: Rx> Client<T, R> {
     pub async fn oneshot(
         &mut self,

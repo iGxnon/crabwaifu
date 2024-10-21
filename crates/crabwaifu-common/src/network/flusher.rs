@@ -1,10 +1,8 @@
+use std::io;
 use std::sync::Arc;
-use std::task::ContextBuilder;
 use std::time::Duration;
-use std::{cmp, io};
 
 use futures::SinkExt;
-use raknet_rs::opts::FlushStrategy;
 use raknet_rs::Message;
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
@@ -13,11 +11,8 @@ use tokio::time;
 use super::PinWriter;
 use crate::utils::TimeoutWrapper;
 
-// Flusher can automatically adjust the flush delay (only raknet), below is the range of adjustment
-const MIN_FLUSH_DELAY_US: u64 = 10_000; // 10ms -- The fastest time for the server to process a small piece of data.
-const MAX_FLUSH_DELAY_US: u64 = 320_000; // 320ms -- The max acceptable delay
-
 // Default options
+const DEFAULT_FLUSH_DELAY: Duration = Duration::from_millis(10); // 10ms -- The fastest time for the server to process a small piece of data.
 const DEFAULT_BUF_SIZE: usize = 1; // Do not buffer too many messages
 const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -30,7 +25,10 @@ pub fn spawn_flush_task(
     Arc<Notify>,
     JoinHandle<()>,
 ) {
-    let (mut flusher, tx) = Flusher::new(writer, DEFAULT_BUF_SIZE);
+    let mut ticker = time::interval(DEFAULT_FLUSH_DELAY);
+    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
+    let (mut flusher, tx) = Flusher::new(writer, DEFAULT_BUF_SIZE, ticker);
     let flush_notify = Arc::new(Notify::new());
     let close_notify = Arc::new(Notify::new());
 
@@ -58,7 +56,6 @@ pub fn spawn_flush_task(
         log::info!("destroying flusher...");
         if let Err(err) = flusher.close().await {
             log::error!("unexpected closing error {err}");
-            // notify the waker that we have closed the flusher
             close_notify_clone.notify_one();
             return;
         }
@@ -69,18 +66,10 @@ pub fn spawn_flush_task(
 
         // Both peers will wait for 2MSL, the difference is that the passive closing side can abort
         // this task in advance.
-        let last_2msl = time::sleep(2 * DEFAULT_CLOSE_TIMEOUT);
-        tokio::pin!(last_2msl);
-        loop {
-            tokio::select! {
-                _ = flusher.wait() => {
-                    if let Err(err) = flusher.flush().await {
-                        log::error!("unexpected flush error {err}, terminating flush task gracefully");
-                        break
-                    }
-                }
-                _ = &mut last_2msl => break,
-            }
+        if let Err(err) = flusher.last_2msl().await {
+            log::error!("unexpected shutdown error {err}");
+            close_notify_clone.notify_one();
+            return;
         }
 
         // notify again the waker that we have shutdown the flusher
@@ -95,28 +84,24 @@ pub fn spawn_flush_task(
 /// A naive auto balanced flush controller for each connection
 struct Flusher<W: PinWriter> {
     writer: W,
-    next_flush: Option<time::Instant>,
     buffer: mpsc::Receiver<Message>,
-    delay_us: u64,
+    ticker: time::Interval,
 }
 
 impl<W: PinWriter> Flusher<W> {
-    fn new(writer: W, size: usize) -> (Self, mpsc::Sender<Message>) {
+    fn new(writer: W, size: usize, ticker: time::Interval) -> (Self, mpsc::Sender<Message>) {
         let (tx, rx) = mpsc::channel(size);
         let flusher = Self {
             writer,
-            next_flush: None,
             buffer: rx,
-            delay_us: MIN_FLUSH_DELAY_US,
+            ticker,
         };
         (flusher, tx)
     }
 
     #[inline(always)]
-    async fn wait(&self) {
-        if let Some(next_flush) = self.next_flush {
-            time::sleep_until(next_flush).await;
-        }
+    async fn wait(&mut self) {
+        self.ticker.tick().await;
     }
 
     #[inline(always)]
@@ -125,23 +110,7 @@ impl<W: PinWriter> Flusher<W> {
         while let Ok(msg) = self.buffer.try_recv() {
             self.writer.feed(msg).await?;
         }
-
-        // Flush with strategy
-        let mut strategy = FlushStrategy::new(true, true, true);
-        std::future::poll_fn(|cx| {
-            let mut cx = ContextBuilder::from(cx).ext(&mut strategy).build();
-            self.writer.poll_flush_unpin(&mut cx)
-        })
-        .await?;
-
-        // A naive exponential algorithm
-        if strategy.flushed_ack() + strategy.flushed_nack() + strategy.flushed_pack() > 0 {
-            self.delay_us = cmp::max(self.delay_us / 2, MIN_FLUSH_DELAY_US);
-        } else {
-            self.delay_us = cmp::min(self.delay_us * 2, MAX_FLUSH_DELAY_US);
-        }
-        self.next_flush = Some(time::Instant::now() + time::Duration::from_micros(self.delay_us));
-
+        self.writer.flush().await?;
         Ok(())
     }
 
@@ -149,5 +118,20 @@ impl<W: PinWriter> Flusher<W> {
     #[inline(always)]
     async fn close(&mut self) -> io::Result<()> {
         self.writer.close().timeout(DEFAULT_CLOSE_TIMEOUT).await?
+    }
+
+    #[inline(always)]
+    async fn last_2msl(&mut self) -> io::Result<()> {
+        let task = async {
+            loop {
+                self.wait().await;
+                self.flush().await?;
+            }
+        }
+        .timeout(2 * DEFAULT_CLOSE_TIMEOUT);
+        match task.await {
+            Ok(res) => res,
+            Err(_) => Ok(()),
+        }
     }
 }

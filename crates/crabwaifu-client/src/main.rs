@@ -36,11 +36,13 @@ impl fmt::Display for Network {
 #[derive(Debug, Subcommand)]
 enum Command {
     Cli,
+    Bench,
 }
 
 async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Result<()> {
     match args.command {
         Command::Cli => cli::run(client, args.verbose).await,
+        Command::Bench => todo!(),
     }
 }
 
