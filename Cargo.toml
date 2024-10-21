@@ -17,9 +17,9 @@ license = "Apache-2.0"
 edition = "2021"
 
 [workspace.dependencies]
-crabml = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
-crabml-llama2 = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
-crabml-wgpu = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
-crabml-vulkan = { git = "https://github.com/iGxnon/crabml.git", branch = "feat-send" }
+crabml = { git = "https://github.com/iGxnon/crabml.git" }
+crabml-llama2 = { git = "https://github.com/iGxnon/crabml.git" }
+crabml-wgpu = { git = "https://github.com/iGxnon/crabml.git" }
+crabml-vulkan = { git = "https://github.com/iGxnon/crabml.git" }
 crabwaifu-common = { version = "0.1.0", path = "crates/crabwaifu-common" }
 raknet-rs = { git = "https://github.com/MemoriesOfTime/raknet-rs.git" }

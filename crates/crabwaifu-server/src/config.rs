@@ -38,6 +38,10 @@ pub struct CrabLlamaConfig {
     pub threads: usize,
     /// The mmap memory lock option, reducing the swap overhead
     pub mlock: bool,
+    /// Use f16 kv cache to reduce memory usage
+    pub f16_kv_cache: bool,
+    /// A session maximum context length, in which will be terminated forcibly if exceeded.
+    pub max_context_length: usize,
 }
 
 impl Default for Config {
@@ -50,6 +54,8 @@ impl Default for Config {
                 temperature: 1.0,
                 threads: num_cpus::get(),
                 mlock: false,
+                f16_kv_cache: true,
+                max_context_length: 4096,
             },
             listen_addr: "0.0.0.0:8808".parse().unwrap(),
             network: Network::Raknet,

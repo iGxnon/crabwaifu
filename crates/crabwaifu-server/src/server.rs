@@ -1,3 +1,4 @@
+use std::cmp;
 use std::net::SocketAddr;
 
 use crabml::gguf::{GGUFFile, GGUFFileLoader, GGUFMetadataValueType};
@@ -82,16 +83,20 @@ pub async fn serve(
     llama_config: CrabLlamaConfig,
 ) -> anyhow::Result<()> {
     let default_steps = llama_config.steps;
+    let f16_kv_cache = llama_config.f16_kv_cache;
+    let max_context_length = llama_config.max_context_length;
+
     let (llama_model, conf) = setup_llama_model(llama_config)?;
     let (shutdown, watcher) = watch::channel("running");
     let ctrl_c = tokio::signal::ctrl_c();
+    let seq_len = cmp::max(conf.seq_len, max_context_length);
     tokio::pin!(ctrl_c);
     tokio::pin!(incoming);
     loop {
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
-                let runner = Llama2Runner::new(&llama_model, conf.seq_len, true)
+                let runner = Llama2Runner::new(&llama_model, seq_len, f16_kv_cache)
                     .expect("llama runner cannot be initialized");
                 let session = session::Session::new(tx, Box::pin(rx), flush_notify, close_notify, runner, default_steps, task);
                 tokio::task::spawn(session.run(watcher.clone()));
