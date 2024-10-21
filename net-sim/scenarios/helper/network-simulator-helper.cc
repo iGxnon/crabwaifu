@@ -13,7 +13,7 @@
 #include "ns3/core-module.h"
 #include "ns3/fd-net-device-module.h"
 #include "ns3/internet-module.h"
-#include "quic-network-simulator-helper.h"
+#include "network-simulator-helper.h"
 
 using namespace ns3;
 
@@ -62,7 +62,7 @@ Mac48Address getMacAddress(std::string iface) {
   return mac;
 }
 
-QuicNetworkSimulatorHelper::QuicNetworkSimulatorHelper() {
+NetworkSimulatorHelper::NetworkSimulatorHelper() {
   GlobalValue::Bind("SimulatorImplementationType", StringValue("ns3::RealtimeSimulatorImpl"));
   GlobalValue::Bind("ChecksumEnabled", BooleanValue(true));
 
@@ -94,7 +94,7 @@ done:
   routing->SetDefaultRoute(dst, 2);
 }
 
-void QuicNetworkSimulatorHelper::Run(Time duration) {
+void NetworkSimulatorHelper::Run(Time duration) {
   signal(SIGTERM, onSignal);
   signal(SIGINT, onSignal);
   signal(SIGKILL, onSignal);
@@ -116,7 +116,7 @@ void QuicNetworkSimulatorHelper::Run(Time duration) {
   Simulator::Destroy();
 }
 
-void QuicNetworkSimulatorHelper::RunSynchronizer() const {
+void NetworkSimulatorHelper::RunSynchronizer() const {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   NS_ABORT_MSG_IF(sockfd < 0, "ERROR opening socket");
 
@@ -134,10 +134,10 @@ void QuicNetworkSimulatorHelper::RunSynchronizer() const {
   listen(sockfd, 100);
 }
 
-Ptr<Node> QuicNetworkSimulatorHelper::GetLeftNode() const {
+Ptr<Node> NetworkSimulatorHelper::GetLeftNode() const {
   return left_node_;
 }
 
-Ptr<Node> QuicNetworkSimulatorHelper::GetRightNode() const {
+Ptr<Node> NetworkSimulatorHelper::GetRightNode() const {
   return right_node_;
 }

@@ -1,13 +1,13 @@
-#ifndef QUIC_NETWORK_SIMULATOR_HELPER_H
-#define QUIC_NETWORK_SIMULATOR_HELPER_H
+#ifndef _NETWORK_SIMULATOR_HELPER_H
+#define _NETWORK_SIMULATOR_HELPER_H
 
 #include "ns3/node.h"
 
 using namespace ns3;
 
-class QuicNetworkSimulatorHelper {
+class NetworkSimulatorHelper {
 public:
-  QuicNetworkSimulatorHelper();
+  NetworkSimulatorHelper();
   void Run(Time);
   Ptr<Node> GetLeftNode() const;
   Ptr<Node> GetRightNode() const;
@@ -17,4 +17,4 @@ private:
   Ptr<Node> left_node_, right_node_;
 };
 
-#endif /* QUIC_NETWORK_SIMULATOR_HELPER_H */
+#endif /* _NETWORK_SIMULATOR_HELPER_H */

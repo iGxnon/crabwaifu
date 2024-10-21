@@ -16,10 +16,6 @@ iptables -A FORWARD -i eth1 -o eth0 -j DROP
 ip6tables -A FORWARD -i eth0 -o eth1 -j DROP
 ip6tables -A FORWARD -i eth1 -o eth0 -j DROP
 
-if [[ -n "$WAITFORSERVER" ]]; then
-  wait-for-it-quic -t 10s $WAITFORSERVER
-fi
-
 echo "Using scenario:" $SCENARIO
 
 tcpdump -i eth0 -U -w "/logs/trace_node_left.pcap" &

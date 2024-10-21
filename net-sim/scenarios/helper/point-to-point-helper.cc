@@ -2,19 +2,19 @@
 #include "ns3/traffic-control-helper.h"
 #include "ns3/ipv4-address-helper.h"
 #include "ns3/ipv6-address-helper.h"
-#include "quic-point-to-point-helper.h"
+#include "point-to-point-helper.h"
 
 using namespace ns3;
 
-QuicPointToPointHelper::QuicPointToPointHelper() : queue_size_(StringValue("100p")) {
+PointToPointHelper::PointToPointHelper() : queue_size_(StringValue("100p")) {
   SetQueue("ns3::DropTailQueue", "MaxSize", StringValue("1p"));
 }
 
-void QuicPointToPointHelper::SetQueueSize(StringValue size) {
+void PointToPointHelper::SetQueueSize(StringValue size) {
   queue_size_ = size;
 }
 
-NetDeviceContainer QuicPointToPointHelper::Install(Ptr<Node> a, Ptr<Node> b) {
+NetDeviceContainer PointToPointHelper::Install(Ptr<Node> a, Ptr<Node> b) {
   NetDeviceContainer devices = PointToPointHelper::Install(a, b);
   TrafficControlHelper tch;
   tch.SetRootQueueDisc("ns3::PfifoFastQueueDisc", "MaxSize", queue_size_);

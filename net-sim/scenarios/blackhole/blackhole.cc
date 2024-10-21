@@ -2,8 +2,8 @@
 #include "ns3/error-model.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
-#include "../helper/quic-network-simulator-helper.h"
-#include "../helper/quic-point-to-point-helper.h"
+#include "../helper/network-simulator-helper.h"
+#include "../helper/point-to-point-helper.h"
 #include "blackhole-error-model.h"
 
 using namespace ns3;
@@ -64,10 +64,10 @@ int main(int argc, char *argv[]) {
     else NS_ABORT_MSG("Invalid directon value.");
   }
 
-  QuicNetworkSimulatorHelper sim;
+  NetworkSimulatorHelper sim;
 
   // Stick in the point-to-point line between the sides.
-  QuicPointToPointHelper p2p;
+  PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(bandwidth));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
   p2p.SetQueueSize(StringValue(queue + "p"));

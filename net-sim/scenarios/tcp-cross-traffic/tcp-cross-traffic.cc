@@ -2,8 +2,8 @@
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/applications-module.h"
-#include "../helper/quic-network-simulator-helper.h"
-#include "../helper/quic-point-to-point-helper.h"
+#include "../helper/network-simulator-helper.h"
+#include "../helper/point-to-point-helper.h"
 
 using namespace ns3;
 
@@ -36,9 +36,9 @@ int main(int argc, char *argv[]) {
   NS_ABORT_MSG_IF(bandwidth.length() == 0, "Missing parameter: bandwidth");
   NS_ABORT_MSG_IF(queue.length() == 0, "Missing parameter: queue");
 
-  QuicNetworkSimulatorHelper sim;
+  NetworkSimulatorHelper sim;
 
-  QuicPointToPointHelper p2p;
+  PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(bandwidth));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
   p2p.SetQueueSize(StringValue(queue + "p"));
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
   Ptr<Node> source_node = nodes.Get(1);
   Ptr<Node> sink_node = nodes.Get(0);
 
-  QuicPointToPointHelper p2p_source;
+  PointToPointHelper p2p_source;
   p2p_source.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
   p2p_source.SetChannelAttribute("Delay", StringValue("1ms"));
 
@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
   ipv4_source.SetBase("193.167.49.0", "255.255.255.0");
   Ipv4InterfaceContainer interfaces_source = ipv4_source.Assign(devices_source);
 
-  QuicPointToPointHelper p2p_sink;
+  PointToPointHelper p2p_sink;
   p2p_sink.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
   p2p_sink.SetChannelAttribute("Delay", StringValue("1ms"));
 

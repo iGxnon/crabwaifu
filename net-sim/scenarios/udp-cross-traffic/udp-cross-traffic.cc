@@ -2,8 +2,8 @@
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/applications-module.h"
-#include "../helper/quic-network-simulator-helper.h"
-#include "../helper/quic-point-to-point-helper.h"
+#include "../helper/network-simulator-helper.h"
+#include "../helper/point-to-point-helper.h"
 
 using namespace ns3;
 
@@ -23,9 +23,9 @@ int main(int argc, char *argv[]) {
   NS_ABORT_MSG_IF(queue.length() == 0, "Missing parameter: queue");
   NS_ABORT_MSG_IF(cross_data_rate.length() == 0, "Missing parameter: crossdatarate");
 
-  QuicNetworkSimulatorHelper sim;
+  NetworkSimulatorHelper sim;
 
-  QuicPointToPointHelper p2p;
+  PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(bandwidth));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
   p2p.SetQueueSize(StringValue(queue + "p"));
