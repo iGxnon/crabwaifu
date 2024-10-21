@@ -50,7 +50,7 @@ bool DropRateErrorModel::DoCorrupt(Ptr<Packet> p) {
         cout << "Forwarding ";
         forwarded++;
     }
-    cout "dropped " << dropped << "/" << dropped + forwarded << " ("
+    cout << "dropped " << dropped << "/" << dropped + forwarded << " ("
          << fixed << setprecision(1)
          << (double)dropped / (dropped + forwarded) * 100
          << "%)" << endl;

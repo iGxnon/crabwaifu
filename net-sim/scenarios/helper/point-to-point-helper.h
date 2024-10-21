@@ -5,13 +5,13 @@
 
 using namespace ns3;
 
-// The PointToPointHelper acts like the ns3::PointToPointHelper,
+// The P2PHelper acts like the ns3::PointToPointHelper,
 // but sets a ns3::DropTailQueue to one packet in order to minimize queueing latency.
 // Queues are simulated using a PfifoFastQueueDisc, with a default size of 100 packets.
 // The queue size can be set to a custom value using SetQueueSize().
-class PointToPointHelper : public PointToPointHelper {
+class P2PHelper : public PointToPointHelper {
 public:
-  PointToPointHelper();
+  P2PHelper();
 
   // SetQueueSize sets the queue size for the PfifoFastQueueDisc
   void SetQueueSize(StringValue);

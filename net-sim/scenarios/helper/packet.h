@@ -5,6 +5,7 @@
 #include "ns3/packet.h"
 #include "ns3/ppp-header.h"
 #include "ns3/ipv4-header.h"
+#include "ns3/ipv6-header.h"
 #include "ns3/udp-header.h"
 
 using namespace ns3;

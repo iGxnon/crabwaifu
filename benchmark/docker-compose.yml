@@ -2,7 +2,7 @@ version: "3.5"
 
 services:
   sim:
-    build: ./net-sim
+    build: ../net-sim
     container_name: sim
     hostname: sim
     stdin_open: true

@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
 
   NetworkSimulatorHelper sim;
 
-  PointToPointHelper p2p;
+  P2PHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(bandwidth));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
   p2p.SetQueueSize(StringValue(queue + "p"));
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
   Ptr<Node> source_node = nodes.Get(1);
   Ptr<Node> sink_node = nodes.Get(0);
 
-  PointToPointHelper p2p_source;
+  P2PHelper p2p_source;
   p2p_source.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
   p2p_source.SetChannelAttribute("Delay", StringValue("1ms"));
 
@@ -61,7 +61,7 @@ int main(int argc, char *argv[]) {
   ipv4_source.SetBase("193.167.49.0", "255.255.255.0");
   Ipv4InterfaceContainer interfaces_source = ipv4_source.Assign(devices_source);
 
-  PointToPointHelper p2p_sink;
+  P2PHelper p2p_sink;
   p2p_sink.SetDeviceAttribute("DataRate", StringValue("100Mbps"));
   p2p_sink.SetChannelAttribute("Delay", StringValue("1ms"));
 

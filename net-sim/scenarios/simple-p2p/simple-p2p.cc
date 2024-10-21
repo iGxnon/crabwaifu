@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
   NetworkSimulatorHelper sim;
 
   // Stick in the point-to-point line between the sides.
-  PointToPointHelper p2p;
+  P2PHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(bandwidth));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
   p2p.SetQueueSize(StringValue(queue + "p"));

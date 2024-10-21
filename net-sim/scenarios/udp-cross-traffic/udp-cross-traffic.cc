@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
 
   NetworkSimulatorHelper sim;
 
-  PointToPointHelper p2p;
+  P2PHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(bandwidth));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
   p2p.SetQueueSize(StringValue(queue + "p"));

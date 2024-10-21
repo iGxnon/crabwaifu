@@ -6,15 +6,15 @@
 
 using namespace ns3;
 
-PointToPointHelper::PointToPointHelper() : queue_size_(StringValue("100p")) {
+P2PHelper::P2PHelper() : queue_size_(StringValue("100p")) {
   SetQueue("ns3::DropTailQueue", "MaxSize", StringValue("1p"));
 }
 
-void PointToPointHelper::SetQueueSize(StringValue size) {
+void P2PHelper::SetQueueSize(StringValue size) {
   queue_size_ = size;
 }
 
-NetDeviceContainer PointToPointHelper::Install(Ptr<Node> a, Ptr<Node> b) {
+NetDeviceContainer P2PHelper::Install(Ptr<Node> a, Ptr<Node> b) {
   NetDeviceContainer devices = PointToPointHelper::Install(a, b);
   TrafficControlHelper tch;
   tch.SetRootQueueDisc("ns3::PfifoFastQueueDisc", "MaxSize", queue_size_);
