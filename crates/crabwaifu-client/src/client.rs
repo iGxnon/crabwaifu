@@ -31,7 +31,7 @@ impl<T, R> Drop for Client<T, R> {
 pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
     let socket = TcpSocket::new_v4()?;
     let stream = socket.connect(addr).await?;
-    let (rx, writer) = tcp_split(stream);
+    let (rx, writer) = tcp_split(stream, false);
     let (tx, flush_notify, close_notify, flush_task) = spawn_flush_task(writer);
     let rx = Box::pin(rx);
     let client = Client {
@@ -121,6 +121,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         // wait for flusher closing
         let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
         if self.is_raknet {
+            // TCP handle 2MSL in the kernel, not here
             // wait for flusher shutdown
             eprintln!("wait 2MSL...");
             let _ = self.close_notify.notified().timeout(shutdown_timeout).await;

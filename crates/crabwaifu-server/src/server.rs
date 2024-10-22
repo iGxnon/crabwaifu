@@ -62,7 +62,7 @@ pub async fn make_tcp_incoming(
         stream
             .set_nodelay(config.nodelay)
             .expect("cannot set nodelay");
-        tcp_split(stream)
+        tcp_split(stream, config.flush)
     });
     Ok(stream)
 }

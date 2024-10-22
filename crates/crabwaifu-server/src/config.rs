@@ -24,6 +24,8 @@ pub enum Network {
 pub struct TCPConfig {
     pub ttl: u32,
     pub nodelay: bool,
+    /// Disable it and let TCP to decide when to flush
+    pub flush: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +65,7 @@ impl Default for Config {
             tcp: TCPConfig {
                 ttl: 30,
                 nodelay: true,
+                flush: false,
             },
         }
     }

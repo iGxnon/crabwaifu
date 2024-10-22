@@ -1,5 +1,5 @@
 listen_addr = "0.0.0.0:8808"
-network = "tcp"
+network = "raknet"
 
 # Default llama model configuration, some of them can be overriden by client request
 [llama]
@@ -31,3 +31,4 @@ max_channels = 64
 [tcp]
 ttl = 60
 nodelay = true
+flush = false  # Disable it and let TCP stack to handle the flush

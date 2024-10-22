@@ -11,9 +11,9 @@ use tokio::net::{TcpListener, TcpStream};
 
 use super::{PinReader, PinWriter};
 
-pub fn tcp_split(stream: TcpStream) -> (impl PinReader, impl PinWriter) {
+pub fn tcp_split(stream: TcpStream, flush: bool) -> (impl PinReader, impl PinWriter) {
     let (reader, writer) = stream.into_split();
-    (tcp_reader(reader), tcp_writer(writer))
+    (tcp_reader(reader), tcp_writer(writer, flush))
 }
 
 fn tcp_reader(mut reader: OwnedReadHalf) -> impl PinReader {
@@ -41,17 +41,23 @@ fn tcp_reader(mut reader: OwnedReadHalf) -> impl PinReader {
     Box::pin(stream)
 }
 
-fn tcp_writer(writer: OwnedWriteHalf) -> impl PinWriter {
-    TcpWriter(writer)
+fn tcp_writer(writer: OwnedWriteHalf, flush: bool) -> impl PinWriter {
+    TcpWriter {
+        inner: writer,
+        flush,
+    }
 }
 
-struct TcpWriter(OwnedWriteHalf);
+struct TcpWriter {
+    inner: OwnedWriteHalf,
+    flush: bool,
+}
 
 impl Sink<Message> for TcpWriter {
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let fut = self.0.writable(); // cancellable
+        let fut = self.inner.writable(); // cancellable
         tokio::pin!(fut);
         fut.poll_unpin(cx)
     }
@@ -59,8 +65,8 @@ impl Sink<Message> for TcpWriter {
     fn start_send(self: Pin<&mut Self>, msg: Message) -> Result<(), Self::Error> {
         // len(4B) + data
         let size = msg.get_data().len();
-        self.0.try_write(&(size as u32).to_be_bytes())?;
-        let written = self.0.try_write(msg.get_data())?;
+        self.inner.try_write(&(size as u32).to_be_bytes())?;
+        let written = self.inner.try_write(msg.get_data())?;
         if written != size {
             Err(io::Error::new(io::ErrorKind::Other, "tcp buffer full"))
         } else {
@@ -69,13 +75,18 @@ impl Sink<Message> for TcpWriter {
     }
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let fut = self.0.flush(); // cancellable
-        tokio::pin!(fut);
-        fut.poll_unpin(cx)
+        if self.flush {
+            let fut = self.inner.flush(); // cancellable
+            tokio::pin!(fut);
+            fut.poll_unpin(cx)
+        } else {
+            // let tcp stack to decide when to flush
+            Poll::Ready(Ok(()))
+        }
     }
 
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        let fut = self.0.shutdown(); // cancellable
+        let fut = self.inner.shutdown(); // cancellable
         tokio::pin!(fut);
         fut.poll_unpin(cx)
     }
