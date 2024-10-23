@@ -3,5 +3,6 @@
 #![feature(stmt_expr_attributes)]
 #![feature(duration_millis_float)]
 
-pub mod client;
+pub mod bench;
 pub mod cli;
+pub mod client;

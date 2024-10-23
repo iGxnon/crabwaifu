@@ -115,6 +115,12 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
+    pub async fn bench_unreliable(&mut self) {}
+
+    pub async fn bench_commutative(&mut self) {}
+
+    pub async fn bench_ordered(&mut self) {}
+
     pub async fn finish(&self) {
         self.close_notify.notify_one();
         let shutdown_timeout = Duration::from_secs(5);

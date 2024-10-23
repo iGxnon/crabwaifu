@@ -6,7 +6,7 @@ use crabml::cpu::CpuTensor;
 use crabml_llama2::llama2::Llama2Runner;
 use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
-use crabwaifu_common::proto::{chat, Packet};
+use crabwaifu_common::proto::{bench, chat, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
@@ -93,70 +93,116 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     #[inline]
+    async fn handle_chat(&mut self, request: chat::Request) {
+        let res: anyhow::Result<()> = try {
+            let content = self.oneshot_completion(
+                &request.messages,
+                request.steps.unwrap_or(self.default_steps),
+            )?;
+            self.tx
+                .send_pack(chat::Response {
+                    message: Message {
+                        role: chat::Role::Assistant,
+                        content,
+                    },
+                })
+                .await?;
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+            return;
+        }
+        // try flush as we completed a whole response
+        self.flush_notify.notify_one();
+    }
+
+    #[inline]
+    async fn handle_chat_stream(&mut self, request: chat::StreamRequest) {
+        let res: anyhow::Result<()> = try {
+            let mut has_stop_mark = false;
+            let stop_mark = self.chat_templ.stop_mark();
+            let mut iter = Self::generate(
+                &mut self.llama_runner,
+                &self.chat_templ.format_prompt(&request.prompt),
+                stop_mark,
+                self.default_steps,
+                &mut has_stop_mark,
+            )?;
+            for ele in &mut iter {
+                let token = ele?;
+                self.tx
+                    .send_pack(chat::StreamResponse {
+                        partial: token,
+                        eos: false,
+                    })
+                    .await?;
+            }
+            drop(iter);
+            if !has_stop_mark {
+                log::debug!("appended stop mark: {stop_mark}");
+                self.llama_runner.prefill(stop_mark, false, false)?;
+            }
+        };
+        let res = if let Err(err) = res {
+            self.tx.send_pack(chat::StreamResponse {
+                partial: err.to_string(),
+                eos: true,
+            })
+        } else {
+            self.tx.send_pack(chat::StreamResponse {
+                partial: String::new(),
+                eos: true,
+            })
+        }
+        .await;
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
     async fn handle_pack(&mut self, pack: Packet) {
         match pack {
             Packet::ChatRequest(request) => {
                 log::info!("got ChatRequest");
-                let res: anyhow::Result<()> = try {
-                    let content = self.oneshot_completion(
-                        &request.messages,
-                        request.steps.unwrap_or(self.default_steps),
-                    )?;
-                    self.tx
-                        .send_pack(chat::Response {
-                            message: Message {
-                                role: chat::Role::Assistant,
-                                content,
-                            },
-                        })
-                        .await?;
-                };
-                if let Err(err) = res {
-                    log::error!("error: {err}");
-                    return;
-                }
-                // try flush as we completed a whole response
-                self.flush_notify.notify_one();
+                self.handle_chat(request).await;
             }
             Packet::ChatStreamRequest(request) => {
                 log::info!("got ChatStreamRequest");
-                let res: anyhow::Result<()> = try {
-                    let mut has_stop_mark = false;
-                    let stop_mark = self.chat_templ.stop_mark();
-                    let mut iter = Self::generate(
-                        &mut self.llama_runner,
-                        &self.chat_templ.format_prompt(&request.prompt),
-                        stop_mark,
-                        self.default_steps,
-                        &mut has_stop_mark,
-                    )?;
-                    for ele in &mut iter {
-                        let token = ele?;
-                        self.tx
-                            .send_pack(chat::StreamResponse {
-                                partial: token,
-                                eos: false,
-                            })
-                            .await?;
-                    }
-                    drop(iter);
-                    if !has_stop_mark {
-                        log::debug!("appended stop mark: {stop_mark}");
-                        self.llama_runner.prefill(stop_mark, false, false)?;
-                    }
-                };
-                let res = if let Err(err) = res {
-                    self.tx.send_pack(chat::StreamResponse {
-                        partial: err.to_string(),
-                        eos: true,
+                self.handle_chat_stream(request).await;
+            }
+            Packet::BenchUnreliableRequest(request) => {
+                log::info!("got BenchUnreliableRequest");
+                let res = self
+                    .tx
+                    .send_pack(bench::UnreliableResponse {
+                        data: vec![0; request.data_len],
                     })
-                } else {
-                    self.tx.send_pack(chat::StreamResponse {
-                        partial: String::new(),
-                        eos: true,
-                    })
+                    .await;
+                if let Err(err) = res {
+                    log::error!("error: {err}");
                 }
-                .await;
+            }
+            Packet::BenchCommutativeRequest(request) => {
+                log::info!("got BenchCommutativeRequest");
+                let res = self
+                    .tx
+                    .send_pack(bench::CommutativeResponse {
+                        data: vec![0; request.data_len],
+                    })
+                    .await;
+                if let Err(err) = res {
+                    log::error!("error: {err}");
+                }
+            }
+            Packet::BenchOrderedRequest(request) => {
+                log::info!("got BenchOrderedRequest");
+                let res = self
+                    .tx
+                    .send_pack(bench::OrderedResponse {
+                        data: vec![0; request.data_len],
+                    })
+                    .await;
                 if let Err(err) = res {
                     log::error!("error: {err}");
                 }

@@ -26,7 +26,7 @@ support_version = [9, 11, 13]
 max_pending = 1024
 max_parted_size = 256
 max_parted_count = 256
-max_channels = 64
+max_channels = 254                # DO NOT MODIFY IT
 
 [tcp]
 ttl = 60

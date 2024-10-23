@@ -1,3 +1,8 @@
+use raknet_rs::Reliability;
+use serde::{Deserialize, Serialize};
+
+use crate::network::Pack;
+
 // Enumeration containing all packets for receiving and dispatching, not for ser/de.
 #[derive(Debug, Clone)]
 pub enum Packet {
@@ -5,6 +10,13 @@ pub enum Packet {
     ChatResponse(chat::Response),
     ChatStreamRequest(chat::StreamRequest),
     ChatStreamResponse(chat::StreamResponse),
+
+    BenchUnreliableRequest(bench::UnreliableRequest),
+    BenchUnreliableResponse(bench::UnreliableResponse),
+    BenchCommutativeRequest(bench::CommutativeRequest),
+    BenchCommutativeResponse(bench::CommutativeResponse),
+    BenchOrderedRequest(bench::OrderedRequest),
+    BenchOrderedResponse(bench::OrderedResponse),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +27,13 @@ pub enum PacketID {
     ChatResponse = 2,
     ChatStreamRequest = 3,
     ChatStreamResponse = 4,
+
+    BenchUnreliableRequest = 200,
+    BenchUnreliableResponse = 201,
+    BenchCommutativeRequest = 202,
+    BenchCommutativeResponse = 203,
+    BenchOrderedRequest = 204,
+    BenchOrderedResponse = 205,
 }
 
 impl PacketID {
@@ -24,6 +43,13 @@ impl PacketID {
             2 => PacketID::ChatResponse,
             3 => PacketID::ChatStreamRequest,
             4 => PacketID::ChatStreamResponse,
+
+            200 => PacketID::BenchUnreliableRequest,
+            201 => PacketID::BenchUnreliableResponse,
+            202 => PacketID::BenchCommutativeRequest,
+            203 => PacketID::BenchCommutativeResponse,
+            204 => PacketID::BenchOrderedRequest,
+            205 => PacketID::BenchOrderedResponse,
             _ => PacketID::InvalidPack,
         }
     }
@@ -31,11 +57,7 @@ impl PacketID {
 
 /// Chat completion prototypes
 pub mod chat {
-    use raknet_rs::Reliability;
-    use serde::{Deserialize, Serialize};
-
-    use super::PacketID;
-    use crate::network::Pack;
+    use super::*;
 
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Message {
@@ -50,6 +72,7 @@ pub mod chat {
         System,
         Assistant,
     }
+
     /// Oneshot chat request
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Request {
@@ -122,3 +145,74 @@ pub mod chat {
 
 /// Realtime prototypes
 pub mod realtime {}
+
+/// Benchmark prototypes
+pub mod bench {
+    use super::*;
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct UnreliableRequest {
+        pub data_len: usize,
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct UnreliableResponse {
+        pub data: Vec<u8>,
+    }
+
+    impl Pack for UnreliableRequest {
+        const ID: PacketID = PacketID::BenchUnreliableRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const RELIABILITY: Reliability = Reliability::Reliable; // ensure it is received by peer
+    }
+
+    impl Pack for UnreliableResponse {
+        const ID: PacketID = PacketID::BenchUnreliableResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const RELIABILITY: Reliability = Reliability::Unreliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct CommutativeRequest {
+        pub data_len: usize,
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct CommutativeResponse {
+        pub data: Vec<u8>,
+    }
+
+    impl Pack for CommutativeRequest {
+        const ID: PacketID = PacketID::BenchCommutativeRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    impl Pack for CommutativeResponse {
+        const ID: PacketID = PacketID::BenchCommutativeResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct OrderedRequest {
+        pub data_len: usize,
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct OrderedResponse {
+        pub data: Vec<u8>,
+    }
+
+    impl Pack for OrderedRequest {
+        const ID: PacketID = PacketID::BenchOrderedRequest;
+        const ORDER_CHANNEL: u8 = 200;
+        const RELIABILITY: Reliability = Reliability::ReliableOrdered;
+    }
+
+    impl Pack for OrderedResponse {
+        const ID: PacketID = PacketID::BenchOrderedResponse;
+        const ORDER_CHANNEL: u8 = 200;
+        const RELIABILITY: Reliability = Reliability::ReliableOrdered;
+    }
+}

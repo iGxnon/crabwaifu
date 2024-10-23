@@ -17,7 +17,7 @@ use crate::config::{self, CrabLlamaConfig, TCPConfig};
 use crate::session;
 
 fn setup_llama_model(
-    config: config::CrabLlamaConfig,
+    config: &config::CrabLlamaConfig,
 ) -> anyhow::Result<(CpuLlamaModel<'static>, LlamaConfig)> {
     let gl = GGUFFileLoader::new(&config.model, config.mlock)?;
     let gl: &'static GGUFFileLoader = Box::leak(Box::new(gl));
@@ -82,14 +82,14 @@ pub async fn serve(
     incoming: impl Stream<Item = (impl PinReader, impl PinWriter)>,
     llama_config: CrabLlamaConfig,
 ) -> anyhow::Result<()> {
+    let (llama_model, conf) = setup_llama_model(&llama_config)?;
+
+    let seq_len = cmp::max(conf.seq_len, llama_config.max_context_length);
     let default_steps = llama_config.steps;
     let f16_kv_cache = llama_config.f16_kv_cache;
-    let max_context_length = llama_config.max_context_length;
 
-    let (llama_model, conf) = setup_llama_model(llama_config)?;
     let (shutdown, watcher) = watch::channel("running");
     let ctrl_c = tokio::signal::ctrl_c();
-    let seq_len = cmp::max(conf.seq_len, max_context_length);
     tokio::pin!(ctrl_c);
     tokio::pin!(incoming);
     loop {
