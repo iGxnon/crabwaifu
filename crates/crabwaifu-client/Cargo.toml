@@ -13,3 +13,4 @@ futures-async-stream = "0.2"
 raknet-rs = { workspace = true }
 rustyline = "14.0.0"
 tokio = { version = "1", features = ["full"] }
+humansize = "2.0.0"

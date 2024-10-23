@@ -28,20 +28,11 @@ pub async fn run(
     received: usize,
     batch_size: usize,
 ) -> anyhow::Result<()> {
-    match suite {
-        Suite::Unreliable => {
-            println!("=== Unreliable Connection Benchmark ===");
-            client.bench_unreliable().await;
-        }
-        Suite::Commutative => {
-            println!("=== Commutative Connection Benchmark ===");
-            client.bench_commutative().await;
-        }
-        Suite::Ordered => {
-            println!("=== Ordered Connection Benchmark ===");
-            client.bench_ordered().await;
-        }
-    }
-
-    Ok(())
+    let res = match suite {
+        Suite::Unreliable => client.bench_unreliable(received).await,
+        Suite::Commutative => client.bench_commutative(received, batch_size).await,
+        Suite::Ordered => client.bench_ordered(received, batch_size).await,
+    };
+    println!("=== END ===");
+    res
 }

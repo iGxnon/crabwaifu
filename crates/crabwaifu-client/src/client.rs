@@ -1,11 +1,11 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, bail};
 use crabwaifu_common::network::{spawn_flush_task, tcp_split, Rx, Tx};
 use crabwaifu_common::proto::chat::{self, Message};
-use crabwaifu_common::proto::Packet;
+use crabwaifu_common::proto::{bench, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use futures::Stream;
 use raknet_rs::client::{self, ConnectTo};
@@ -115,11 +115,106 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
-    pub async fn bench_unreliable(&mut self) {}
+    pub async fn bench_unreliable(&mut self, received: usize) -> anyhow::Result<()> {
+        println!("=== Unreliable Connection Benchmark ===");
+        let start_at = Instant::now();
+        let mut actual_received = 0;
+        self.tx
+            .send_pack(bench::UnreliableRequest { data_len: received })
+            .await?;
+        loop {
+            let pack = self.rx.recv_pack().await?;
+            match pack {
+                Packet::BenchUnreliableRequest(_) => break, // EOF
+                Packet::BenchUnreliableResponse(res) => {
+                    actual_received += res.data_partial.len();
+                }
+                _ => bail!("interrupt pack {pack:?}"),
+            }
+        }
+        let dur = start_at.elapsed();
+        println!(
+            "expect received {}\nactual received {}\ncost {}ms\nrecv rate {}",
+            bytes(received),
+            bytes(actual_received),
+            dur.as_millis_f64(),
+            rate(actual_received, dur)
+        );
+        Ok(())
+    }
 
-    pub async fn bench_commutative(&mut self) {}
+    pub async fn bench_commutative(
+        &mut self,
+        received: usize,
+        batch_size: usize,
+    ) -> anyhow::Result<()> {
+        println!("=== Commutative Connection Benchmark ===");
+        let start_at = Instant::now();
+        self.tx
+            .send_pack(bench::CommutativeRequest {
+                data_len: received,
+                batch_size,
+            })
+            .await?;
+        let mut total_received = 0;
+        loop {
+            let pack = self.rx.recv_pack().await?;
+            if let Packet::BenchCommutativeResponse(res) = pack {
+                total_received += res.data_partial.len();
+            } else {
+                bail!("interrupt pack {pack:?}")
+            }
+            if total_received == received {
+                break;
+            }
+        }
+        let dur = start_at.elapsed();
+        println!(
+            "expect received {}\ncost {}ms\nrecv rate {}",
+            bytes(received),
+            dur.as_millis_f64(),
+            rate(total_received, dur)
+        );
+        Ok(())
+    }
 
-    pub async fn bench_ordered(&mut self) {}
+    pub async fn bench_ordered(
+        &mut self,
+        received: usize,
+        batch_size: usize,
+    ) -> anyhow::Result<()> {
+        println!("=== Ordered Connection Benchmark ===");
+        let start_at = Instant::now();
+        self.tx
+            .send_pack(bench::OrderedRequest {
+                data_len: received,
+                batch_size,
+            })
+            .await?;
+        let mut total_received = 0;
+        let mut expect_index = 0;
+        loop {
+            let pack = self.rx.recv_pack().await?;
+            if let Packet::BenchOrderedResponse(res) = pack {
+                total_received += res.data_partial.len();
+                assert_eq!(res.index, expect_index); // ordered
+                expect_index += 1;
+            } else {
+                bail!("interrupt pack {pack:?}")
+            }
+            if total_received == received {
+                break;
+            }
+        }
+        let dur = start_at.elapsed();
+        println!(
+            "expect received {}\ncost {}ms\nrecv rate {}",
+            bytes(received),
+            dur.as_millis_f64(),
+            rate(total_received, dur)
+        );
+        Ok(())
+    }
 
     pub async fn finish(&self) {
         self.close_notify.notify_one();
@@ -133,4 +228,20 @@ impl<T: Tx, R: Rx> Client<T, R> {
             let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
         }
     }
+}
+
+fn rate(bytes: usize, duration: Duration) -> String {
+    let per_second = Duration::from_secs(1).as_nanos() as f64 / duration.as_nanos() as f64;
+    let bits_per_second = (bytes as f64 * 8.0 * per_second) as u64;
+
+    use humansize::{format_size, DECIMAL};
+    let value = format_size(bits_per_second, DECIMAL.space_after_value(false));
+    let value = value.trim_end_matches('B');
+
+    format!("{value}bps")
+}
+
+fn bytes(value: usize) -> String {
+    use humansize::{format_size, DECIMAL};
+    format_size(value, DECIMAL.space_after_value(false))
 }

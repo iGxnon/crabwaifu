@@ -49,7 +49,7 @@ enum Command {
         receive: usize,
         /// Data batch size expected to be divided into parts, ignored when use unreliable bench
         /// suite
-        #[arg(long)]
+        #[arg(long, default_value_t = 1460)]
         batch_size: usize,
     },
 }
