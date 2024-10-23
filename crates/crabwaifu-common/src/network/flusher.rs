@@ -13,7 +13,7 @@ use crate::utils::TimeoutWrapper;
 
 // Default options
 const DEFAULT_FLUSH_DELAY: Duration = Duration::from_millis(10); // 10ms -- The fastest time for the server to process a small piece of data.
-const DEFAULT_BUF_SIZE: usize = 1; // Do not buffer too many messages
+const DEFAULT_BUF_SIZE: usize = 8; // Do not buffer too many messages
 const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Spawn the flush task and return the handles of it

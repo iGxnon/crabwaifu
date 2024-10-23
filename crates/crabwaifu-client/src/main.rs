@@ -40,13 +40,28 @@ enum Command {
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
     },
-    Bench,
+    Bench {
+        /// unreliable|commutative|ordered
+        #[arg(short, long)]
+        suite: bench::Suite,
+        /// Total data wished to be received from server
+        #[arg(long)]
+        receive: usize,
+        /// Data batch size expected to be divided into parts, ignored when use unreliable bench
+        /// suite
+        #[arg(long)]
+        batch_size: usize,
+    },
 }
 
 async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Result<()> {
     match args.command {
         Command::Cli { verbose } => cli::run(client, verbose).await,
-        Command::Bench => bench::run(client).await,
+        Command::Bench {
+            suite,
+            receive,
+            batch_size: parts,
+        } => bench::run(client, suite, receive, parts).await,
     }
 }
 
@@ -59,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
                 args.endpoint,
                 raknet_rs::client::Config::default()
                     .mtu(args.mtu)
-                    .max_channels(254),
+                    .max_channels(255),
             )
             .await?;
             if let Err(err) = run(&mut client, args).await {

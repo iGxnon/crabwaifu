@@ -1,6 +1,6 @@
-use std::io;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{cmp, io, mem};
 
 use crabml::cpu::CpuTensor;
 use crabml_llama2::llama2::Llama2Runner;
@@ -13,6 +13,8 @@ use tokio::task::JoinHandle;
 
 use crate::templ::{ChatReplyIterator, ChatTemplate};
 
+const CONSERVATIVE_HEAD_SIZE: usize = 17;
+
 pub struct Session<T, R> {
     tx: T,
     rx: R,
@@ -21,6 +23,7 @@ pub struct Session<T, R> {
     llama_runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
     default_steps: usize,
+    mtu: usize,
     flush_task: JoinHandle<()>,
 }
 
@@ -31,6 +34,7 @@ impl<T, R> Drop for Session<T, R> {
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tx: T,
         rx: R,
@@ -38,6 +42,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
         close_notify: Arc<Notify>,
         llama_runner: Llama2Runner<CpuTensor<'static>>,
         default_steps: usize,
+        mtu: usize,
         flusher_task: JoinHandle<()>,
     ) -> Self {
         Self {
@@ -48,6 +53,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             chat_templ: ChatTemplate::heuristic_guess(&llama_runner),
             llama_runner,
             default_steps,
+            mtu,
             flush_task: flusher_task,
         }
     }
@@ -161,6 +167,81 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     #[inline]
+    async fn handle_bench_unreliable(&mut self, request: bench::UnreliableRequest) {
+        let max_len = self.mtu - CONSERVATIVE_HEAD_SIZE;
+        let mut data = vec![0; request.data_len];
+        let mut res = if request.data_len > max_len {
+            try {
+                let parts = request.data_len.div_ceil(max_len);
+                for _ in 0..parts {
+                    let mut data_partial = data.split_off(cmp::min(max_len, data.len()));
+                    mem::swap(&mut data, &mut data_partial);
+                    self.tx
+                        .send_pack(bench::UnreliableResponse { data_partial })
+                        .await?
+                }
+                debug_assert!(data.is_empty(), "data remains");
+            }
+        } else {
+            self.tx
+                .send_pack(bench::UnreliableResponse { data_partial: data })
+                .await
+        };
+        if let Err(err) = res {
+            log::error!("transfer data: {err}");
+        }
+        // a reliable packet sent as EOF
+        res = self
+            .tx
+            .send_pack(bench::UnreliableRequest { data_len: 0 })
+            .await;
+        if let Err(err) = res {
+            log::error!("finish data: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_bench_commutative(&mut self, request: bench::CommutativeRequest) {
+        let per_len = request.batch_size;
+        let parts = request.data_len.div_ceil(per_len);
+        let mut data = vec![0; request.data_len];
+        let res: anyhow::Result<()> = try {
+            for _ in 0..parts {
+                let mut data_partial = data.split_off(cmp::min(per_len, data.len()));
+                mem::swap(&mut data, &mut data_partial);
+                self.tx
+                    .send_pack(bench::CommutativeResponse { data_partial })
+                    .await?;
+            }
+        };
+        if let Err(err) = res {
+            log::error!("transfer data: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_bench_ordered(&mut self, request: bench::OrderedRequest) {
+        let per_len = request.batch_size;
+        let parts = request.data_len.div_ceil(per_len);
+        let mut data = vec![0; request.data_len];
+        let res: anyhow::Result<()> = try {
+            for index in 0..parts {
+                let mut data_partial = data.split_off(cmp::min(per_len, data.len()));
+                mem::swap(&mut data, &mut data_partial);
+                self.tx
+                    .send_pack(bench::OrderedResponse {
+                        data_partial,
+                        index,
+                    })
+                    .await?;
+            }
+        };
+        if let Err(err) = res {
+            log::error!("transfer data: {err}");
+        }
+    }
+
+    #[inline]
     async fn handle_pack(&mut self, pack: Packet) {
         match pack {
             Packet::ChatRequest(request) => {
@@ -173,39 +254,15 @@ impl<T: Tx, R: Rx> Session<T, R> {
             }
             Packet::BenchUnreliableRequest(request) => {
                 log::info!("got BenchUnreliableRequest");
-                let res = self
-                    .tx
-                    .send_pack(bench::UnreliableResponse {
-                        data: vec![0; request.data_len],
-                    })
-                    .await;
-                if let Err(err) = res {
-                    log::error!("error: {err}");
-                }
+                self.handle_bench_unreliable(request).await;
             }
             Packet::BenchCommutativeRequest(request) => {
                 log::info!("got BenchCommutativeRequest");
-                let res = self
-                    .tx
-                    .send_pack(bench::CommutativeResponse {
-                        data: vec![0; request.data_len],
-                    })
-                    .await;
-                if let Err(err) = res {
-                    log::error!("error: {err}");
-                }
+                self.handle_bench_commutative(request).await;
             }
             Packet::BenchOrderedRequest(request) => {
                 log::info!("got BenchOrderedRequest");
-                let res = self
-                    .tx
-                    .send_pack(bench::OrderedResponse {
-                        data: vec![0; request.data_len],
-                    })
-                    .await;
-                if let Err(err) = res {
-                    log::error!("error: {err}");
-                }
+                self.handle_bench_ordered(request).await;
             }
             _ => {
                 log::warn!("got unexpected packet on server {pack:?}");

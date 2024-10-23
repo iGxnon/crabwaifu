@@ -147,17 +147,23 @@ pub mod chat {
 pub mod realtime {}
 
 /// Benchmark prototypes
+/// TODO: sequenced connection
 pub mod bench {
     use super::*;
 
+    /// The client instructs the server to return how much data, and at the same time, the server
+    /// will treat this data packet as the end.
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct UnreliableRequest {
         pub data_len: usize,
+        // no batch_size field as ee need to make specific divisions to ensure that it does not
+        // exceed the MTU.
     }
 
+    /// 1 UnreliableRequest : N UnreliableResponse (each of them does not exceed MTU)
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct UnreliableResponse {
-        pub data: Vec<u8>,
+        pub data_partial: Vec<u8>,
     }
 
     impl Pack for UnreliableRequest {
@@ -175,11 +181,13 @@ pub mod bench {
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct CommutativeRequest {
         pub data_len: usize,
+        pub batch_size: usize,
     }
 
+    /// 1 CommutativeRequest : N CommutativeResponse (each of them does not depend each other)
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct CommutativeResponse {
-        pub data: Vec<u8>,
+        pub data_partial: Vec<u8>,
     }
 
     impl Pack for CommutativeRequest {
@@ -197,17 +205,20 @@ pub mod bench {
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct OrderedRequest {
         pub data_len: usize,
+        pub batch_size: usize,
     }
 
+    /// 1 OrderedRequest : N OrderedResponse (server will divide it)
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct OrderedResponse {
-        pub data: Vec<u8>,
+        pub data_partial: Vec<u8>,
+        pub index: usize, // used to check order
     }
 
     impl Pack for OrderedRequest {
         const ID: PacketID = PacketID::BenchOrderedRequest;
         const ORDER_CHANNEL: u8 = 200;
-        const RELIABILITY: Reliability = Reliability::ReliableOrdered;
+        const RELIABILITY: Reliability = Reliability::Reliable;
     }
 
     impl Pack for OrderedResponse {

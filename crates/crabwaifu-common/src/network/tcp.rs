@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
-use super::{PinReader, PinWriter};
+use super::{PinReader, PinWriter, WriterInfo};
 
 pub fn tcp_split(stream: TcpStream, flush: bool) -> (impl PinReader, impl PinWriter) {
     let (reader, writer) = stream.into_split();
@@ -89,6 +89,13 @@ impl Sink<Message> for TcpWriter {
         let fut = self.inner.shutdown(); // cancellable
         tokio::pin!(fut);
         fut.poll_unpin(cx)
+    }
+}
+
+impl WriterInfo for TcpWriter {
+    fn mtu(&self) -> usize {
+        // no mtu
+        0
     }
 }
 

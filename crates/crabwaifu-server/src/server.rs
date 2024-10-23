@@ -92,13 +92,24 @@ pub async fn serve(
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
     tokio::pin!(incoming);
+
     loop {
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
+                let mtu = writer.mtu();
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
                 let runner = Llama2Runner::new(&llama_model, seq_len, f16_kv_cache)
                     .expect("llama runner cannot be initialized");
-                let session = session::Session::new(tx, Box::pin(rx), flush_notify, close_notify, runner, default_steps, task);
+                let session = session::Session::new(
+                    tx,
+                    rx,
+                    flush_notify,
+                    close_notify,
+                    runner,
+                    default_steps,
+                    mtu,
+                    task,
+                );
                 tokio::task::spawn(session.run(watcher.clone()));
             }
             _ = &mut ctrl_c => {
