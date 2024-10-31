@@ -1,5 +1,5 @@
 listen_addr = "0.0.0.0:8808"
-network = "raknet"
+network = "both"
 
 # Default llama model configuration, some of them can be overriden by client request
 [llama]
@@ -20,7 +20,7 @@ max_context_length = 4096            # It should not be less than the value in t
 send_buf_cap = 128
 sever_guid = 114514
 advertisement = "Hi, I am benchmark server"
-min_mtu = 500
+min_mtu = 480
 max_mtu = 1480
 support_version = [9, 11, 13]
 max_pending = 1024
@@ -31,4 +31,3 @@ max_channels = 255                # DO NOT MODIFY IT
 [tcp]
 ttl = 60
 nodelay = true
-flush = false  # Disable it and let TCP stack to handle the flush

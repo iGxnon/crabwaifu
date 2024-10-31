@@ -27,9 +27,10 @@ pub async fn run(
     suite: Suite,
     received: usize,
     batch_size: usize,
+    mtu: u16,
 ) -> anyhow::Result<()> {
     let res = match suite {
-        Suite::Unreliable => client.bench_unreliable(received).await,
+        Suite::Unreliable => client.bench_unreliable(received, mtu as usize).await,
         Suite::Commutative => client.bench_commutative(received, batch_size).await,
         Suite::Ordered => client.bench_ordered(received, batch_size).await,
     };

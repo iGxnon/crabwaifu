@@ -62,7 +62,7 @@ pub async fn make_tcp_incoming(
         stream
             .set_nodelay(config.nodelay)
             .expect("cannot set nodelay");
-        tcp_split(stream, config.flush)
+        tcp_split(stream)
     });
     Ok(stream)
 }
@@ -96,7 +96,6 @@ pub async fn serve(
     loop {
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
-                let mtu = writer.mtu();
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
                 let runner = Llama2Runner::new(&llama_model, seq_len, f16_kv_cache)
                     .expect("llama runner cannot be initialized");
@@ -107,7 +106,6 @@ pub async fn serve(
                     close_notify,
                     runner,
                     default_steps,
-                    mtu,
                     task,
                 );
                 tokio::task::spawn(session.run(watcher.clone()));

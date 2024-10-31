@@ -31,7 +31,7 @@ impl<T, R> Drop for Client<T, R> {
 pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
     let socket = TcpSocket::new_v4()?;
     let stream = socket.connect(addr).await?;
-    let (rx, writer) = tcp_split(stream, false);
+    let (rx, writer) = tcp_split(stream);
     let (tx, flush_notify, close_notify, flush_task) = spawn_flush_task(writer);
     let rx = Box::pin(rx);
     let client = Client {
@@ -115,12 +115,15 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
-    pub async fn bench_unreliable(&mut self, received: usize) -> anyhow::Result<()> {
+    pub async fn bench_unreliable(&mut self, received: usize, mtu: usize) -> anyhow::Result<()> {
         println!("=== Unreliable Connection Benchmark ===");
         let start_at = Instant::now();
         let mut actual_received = 0;
         self.tx
-            .send_pack(bench::UnreliableRequest { data_len: received })
+            .send_pack(bench::UnreliableRequest {
+                data_len: received,
+                mtu,
+            })
             .await?;
         loop {
             let pack = self.rx.recv_pack().await?;

@@ -13,3 +13,4 @@ log = "0.4"
 raknet-rs = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7.12", features = ["codec"] } # TODO remove it

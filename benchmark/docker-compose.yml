@@ -24,7 +24,7 @@ services:
         ipv6_address: fd00:cafe:cafe:100::2
     extra_hosts:
       - "server:193.167.100.100"
-  
+
   server:
     build:
       context: ../
@@ -53,18 +53,18 @@ services:
       - RUST_LOG=debug
     entrypoint: ["./run_endpoint.sh"]
     command: ["server.toml"]
-  
-  client:
+
+  client-raknet:
     build:
       context: ../
       target: client
-    container_name: client
-    hostname: client
+    container_name: client-raknet
+    hostname: client-raknet
     stdin_open: true
     tty: true
     volumes:
       - ./run_endpoint.sh:/app/run_endpoint.sh
-      - ./logs/client:/logs
+      - ./logs/client-raknet:/logs
     cap_add:
       - NET_ADMIN
     ulimits:
@@ -82,6 +82,40 @@ services:
     command:
       - "-E 193.167.100.100:8808"
       - "-N raknet"
+      - "--mtu 1480"
+      - "bench"
+      - "--suite commutative"
+      - "--receive 20000000"
+      - "--batch-size 1460"
+
+  client-tcp:
+    build:
+      context: ../
+      target: client
+    container_name: client-tcp
+    hostname: client-tcp
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./run_endpoint.sh:/app/run_endpoint.sh
+      - ./logs/client-tcp:/logs
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
+    depends_on:
+      - sim
+      - server
+    networks:
+      leftnet:
+        ipv4_address: 193.167.0.100
+        ipv6_address: fd00:cafe:cafe:0::100
+    environment:
+      - ENDPOINT=crabwaifu-client
+    entrypoint: ["./run_endpoint.sh"]
+    command:
+      - "-E 193.167.100.100:8808"
+      - "-N tcp"
       - "--mtu 1480"
       - "bench"
       - "--suite commutative"

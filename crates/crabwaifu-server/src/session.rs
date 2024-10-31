@@ -23,7 +23,6 @@ pub struct Session<T, R> {
     llama_runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
     default_steps: usize,
-    mtu: usize,
     flush_task: JoinHandle<()>,
 }
 
@@ -42,7 +41,6 @@ impl<T: Tx, R: Rx> Session<T, R> {
         close_notify: Arc<Notify>,
         llama_runner: Llama2Runner<CpuTensor<'static>>,
         default_steps: usize,
-        mtu: usize,
         flusher_task: JoinHandle<()>,
     ) -> Self {
         Self {
@@ -53,7 +51,6 @@ impl<T: Tx, R: Rx> Session<T, R> {
             chat_templ: ChatTemplate::heuristic_guess(&llama_runner),
             llama_runner,
             default_steps,
-            mtu,
             flush_task: flusher_task,
         }
     }
@@ -168,7 +165,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
 
     #[inline]
     async fn handle_bench_unreliable(&mut self, request: bench::UnreliableRequest) {
-        let max_len = self.mtu - CONSERVATIVE_HEAD_SIZE;
+        let max_len = request.mtu - CONSERVATIVE_HEAD_SIZE;
         let parts = request.data_len.div_ceil(max_len);
         let mut data = vec![0; request.data_len];
         let mut res = try {
@@ -187,7 +184,10 @@ impl<T: Tx, R: Rx> Session<T, R> {
         // a reliable packet sent as EOF
         res = self
             .tx
-            .send_pack(bench::UnreliableRequest { data_len: 0 })
+            .send_pack(bench::UnreliableRequest {
+                data_len: 0,
+                mtu: 0,
+            })
             .await;
         if let Err(err) = res {
             log::error!("finish data: {err}");

@@ -4,7 +4,6 @@ use std::io::Write;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::{Sink, Stream, StreamExt};
-use raknet_rs::opts::ConnectionInfo;
 use raknet_rs::{Message, Reliability};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -20,23 +19,13 @@ use crate::proto::{bench, chat, Packet, PacketID};
 
 // I am the loyal fan of static dispatch(
 // Ensure unpin here cz i do not want to write too many projections
-pub trait PinWriter = Sink<Message, Error = io::Error> + Unpin + Send + Sync + WriterInfo + 'static;
+pub trait PinWriter = Sink<Message, Error = io::Error> + Unpin + Send + Sync + 'static;
 pub trait PinReader = Stream<Item = Bytes> + Unpin + Send + Sync + 'static;
 
 pub trait Pack: Serialize + DeserializeOwned + Send + Sync + 'static {
     const ID: PacketID;
     const RELIABILITY: Reliability;
     const ORDER_CHANNEL: u8;
-}
-
-pub trait WriterInfo {
-    fn mtu(&self) -> usize;
-}
-
-impl<S: ConnectionInfo> WriterInfo for S {
-    fn mtu(&self) -> usize {
-        ConnectionInfo::mtu(self) as usize
-    }
 }
 
 // Sending packets within many threads, so this is a shared reference

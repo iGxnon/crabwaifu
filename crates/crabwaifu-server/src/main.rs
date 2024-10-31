@@ -33,5 +33,22 @@ async fn main() -> anyhow::Result<()> {
             let incoming = make_tcp_incoming(config.listen_addr, config.tcp).await?;
             serve(incoming, config.llama).await
         }
+        Network::Both => {
+            println!("server is listening on {}", config.listen_addr);
+            let llama_config = config.llama.clone();
+            let raknet = async move {
+                let incoming = make_raknet_incoming(config.listen_addr, config.raknet).await?;
+                serve(incoming, llama_config).await
+            };
+            let tcp = async move {
+                let incoming = make_tcp_incoming(config.listen_addr, config.tcp).await?;
+                serve(incoming, config.llama).await
+            };
+            let rak_handle = tokio::spawn(raknet);
+            let tcp_handle = tokio::spawn(tcp);
+            rak_handle.await??;
+            tcp_handle.await??;
+            Ok(())
+        }
     }
 }

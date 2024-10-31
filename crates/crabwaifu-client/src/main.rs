@@ -61,7 +61,7 @@ async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Resul
             suite,
             receive,
             batch_size: parts,
-        } => bench::run(client, suite, receive, parts).await,
+        } => bench::run(client, suite, receive, parts, args.mtu).await,
     }
 }
 

@@ -156,8 +156,7 @@ pub mod bench {
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct UnreliableRequest {
         pub data_len: usize,
-        // no batch_size field as ee need to make specific divisions to ensure that it does not
-        // exceed the MTU.
+        pub mtu: usize,
     }
 
     /// 1 UnreliableRequest : N UnreliableResponse (each of them does not exceed MTU)
