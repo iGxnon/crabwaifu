@@ -5,11 +5,14 @@
 - [x] Chat template
 - [x] Session Manager based on Llama2Chat
 - [x] Command line client
-- [ ] Micro benchmark
+- [x] Metrics
   - [x] TCP `Tx` `Rx`
   - [x] Raknet outperforms TCP in terms of latency!!
   - [ ] More metrics!
     - [x] first token delay
+    - [ ] ...
+- [x] Network simulation
+- [ ] Simulation Benchmark
 - [ ] ASR & TTS
   - [ ] HuggingFace with python
   - [ ] Contribute crates `crabml-tts` and `crabml-asr` ?

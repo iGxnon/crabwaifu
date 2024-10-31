@@ -134,9 +134,10 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
         let dur = start_at.elapsed();
         println!(
-            "expect received {}\nactual received {}\ncost {}ms\nrecv rate {}",
+            "expect received {}\nactual received {}\nlost ratio {}\ncost {}ms\nrecv rate {}",
             bytes(received),
             bytes(actual_received),
+            1.0 - actual_received as f64 / received as f64,
             dur.as_millis_f64(),
             rate(actual_received, dur)
         );

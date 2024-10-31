@@ -1,0 +1,34 @@
+listen_addr = "0.0.0.0:8808"
+network = "raknet"
+
+# Default llama model configuration, some of them can be overriden by client request
+[llama]
+# Avaliable models:
+# - https://huggingface.co/shenzhi-wang/Llama3.1-8B-Chinese-Chat/blob/main/gguf/llama3.1_8b_chinese_chat_q8_0.gguf
+# - https://huggingface.co/lmstudio-ai/gemma-2b-it-GGUF/blob/main/gemma-2b-it-q8_0.gguf
+# - ... llama family with Q8_0/Q4_0/Q4_1 quantization methods
+model = "./TinyLLama-v0-5M-F16.gguf"
+steps = 300                          # The number of steps to run the model
+probability = 0.9                    # The probability of the model to generate the next token, it is used to control the randomness of the model
+temperature = 1.0                    # The temperature of the model, it is used to control the randomness of the model
+threads = 8                          # Number of threads to run the model
+mlock = true                         # Enable mlock to lock the memory, it reduces the risk of swapping to disk
+f16_kv_cache = true                  # Enable f16 key-value cache, it reduces the memory usage
+max_context_length = 4096            # It should not be less than the value in the model parameter file.
+
+[raknet]
+send_buf_cap = 128
+sever_guid = 114514
+advertisement = "Hi, I am benchmark server"
+min_mtu = 500
+max_mtu = 1480
+support_version = [9, 11, 13]
+max_pending = 1024
+max_parted_size = 256
+max_parted_count = 256
+max_channels = 255                # DO NOT MODIFY IT
+
+[tcp]
+ttl = 60
+nodelay = true
+flush = false  # Disable it and let TCP stack to handle the flush

@@ -169,23 +169,17 @@ impl<T: Tx, R: Rx> Session<T, R> {
     #[inline]
     async fn handle_bench_unreliable(&mut self, request: bench::UnreliableRequest) {
         let max_len = self.mtu - CONSERVATIVE_HEAD_SIZE;
+        let parts = request.data_len.div_ceil(max_len);
         let mut data = vec![0; request.data_len];
-        let mut res = if request.data_len > max_len {
-            try {
-                let parts = request.data_len.div_ceil(max_len);
-                for _ in 0..parts {
-                    let mut data_partial = data.split_off(cmp::min(max_len, data.len()));
-                    mem::swap(&mut data, &mut data_partial);
-                    self.tx
-                        .send_pack(bench::UnreliableResponse { data_partial })
-                        .await?
-                }
-                debug_assert!(data.is_empty(), "data remains");
+        let mut res = try {
+            for _ in 0..parts {
+                let mut data_partial = data.split_off(cmp::min(max_len, data.len()));
+                mem::swap(&mut data, &mut data_partial);
+                self.tx
+                    .send_pack(bench::UnreliableResponse { data_partial })
+                    .await?
             }
-        } else {
-            self.tx
-                .send_pack(bench::UnreliableResponse { data_partial: data })
-                .await
+            debug_assert!(data.is_empty(), "data remains");
         };
         if let Err(err) = res {
             log::error!("transfer data: {err}");
@@ -213,6 +207,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                     .send_pack(bench::CommutativeResponse { data_partial })
                     .await?;
             }
+            debug_assert!(data.is_empty(), "data remains");
         };
         if let Err(err) = res {
             log::error!("transfer data: {err}");
@@ -235,6 +230,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                     })
                     .await?;
             }
+            debug_assert!(data.is_empty(), "data remains");
         };
         if let Err(err) = res {
             log::error!("transfer data: {err}");

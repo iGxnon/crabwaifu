@@ -22,6 +22,71 @@ services:
       rightnet:
         ipv4_address: 193.167.100.2
         ipv6_address: fd00:cafe:cafe:100::2
+    extra_hosts:
+      - "server:193.167.100.100"
+  
+  server:
+    build:
+      context: ../
+      target: server
+    container_name: server
+    hostname: server
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./server.toml:/app/server.toml
+      - ./run_endpoint.sh:/app/run_endpoint.sh
+      - ../TinyLLama-v0-5M-F16.gguf:/app/TinyLLama-v0-5M-F16.gguf
+      - ./logs/server:/logs
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
+    depends_on:
+      - sim
+    networks:
+      rightnet:
+        ipv4_address: 193.167.100.100
+        ipv6_address: fd00:cafe:cafe:100::100
+    environment:
+      - ENDPOINT=crabwaifu-server
+      - RUST_LOG=debug
+    entrypoint: ["./run_endpoint.sh"]
+    command: ["server.toml"]
+  
+  client:
+    build:
+      context: ../
+      target: client
+    container_name: client
+    hostname: client
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./run_endpoint.sh:/app/run_endpoint.sh
+      - ./logs/client:/logs
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock: 67108864
+    depends_on:
+      - sim
+      - server
+    networks:
+      leftnet:
+        ipv4_address: 193.167.0.100
+        ipv6_address: fd00:cafe:cafe:0::100
+    environment:
+      - ENDPOINT=crabwaifu-client
+    entrypoint: ["./run_endpoint.sh"]
+    command:
+      - "-E 193.167.100.100:8808"
+      - "-N raknet"
+      - "--mtu 1480"
+      - "bench"
+      - "--suite commutative"
+      - "--receive 20000000"
+      - "--batch-size 1460"
 
 
 networks:
