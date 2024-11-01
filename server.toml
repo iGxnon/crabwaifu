@@ -30,4 +30,4 @@ max_channels = 255                # DO NOT MODIFY IT
 
 [tcp]
 ttl = 60
-nodelay = true
+nodelay = false

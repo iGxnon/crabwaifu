@@ -51,6 +51,9 @@ enum Command {
         /// suite
         #[arg(long, default_value_t = 1460)]
         batch_size: usize,
+        /// Brief output
+        #[arg(long, default_value_t = false)]
+        brief: bool,
     },
 }
 
@@ -61,7 +64,8 @@ async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Resul
             suite,
             receive,
             batch_size: parts,
-        } => bench::run(client, suite, receive, parts, args.mtu).await,
+            brief,
+        } => bench::run(client, suite, receive, parts, args.mtu, brief).await,
     }
 }
 

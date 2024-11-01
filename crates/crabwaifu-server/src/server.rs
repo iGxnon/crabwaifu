@@ -59,6 +59,10 @@ pub async fn make_tcp_incoming(
     listener.set_ttl(config.ttl)?;
     let stream = TcpListenerStream::new(listener).map(move |res| {
         let stream = res.expect("failed to init tcp stream");
+        log::debug!(
+            "accept new tcp connection, default tcp no_delay: {}",
+            stream.nodelay().expect("cannot get nodelay")
+        );
         stream
             .set_nodelay(config.nodelay)
             .expect("cannot set nodelay");

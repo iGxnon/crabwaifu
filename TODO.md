@@ -13,6 +13,9 @@
     - [ ] ...
 - [x] Network simulation
 - [ ] Simulation Benchmark
+  - [x] Basic comparative framework
+  - [ ] Concurrent client
+  - [x] Packet delay histogram
 - [ ] ASR & TTS
   - [ ] HuggingFace with python
   - [ ] Contribute crates `crabml-tts` and `crabml-asr` ?

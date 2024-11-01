@@ -2,6 +2,7 @@ use std::fmt;
 
 use clap::ValueEnum;
 use crabwaifu_common::network::{Rx, Tx};
+use histogram::{AtomicHistogram, Histogram};
 
 use crate::client::Client;
 
@@ -28,12 +29,49 @@ pub async fn run(
     received: usize,
     batch_size: usize,
     mtu: u16,
+    brief: bool,
 ) -> anyhow::Result<()> {
-    let res = match suite {
-        Suite::Unreliable => client.bench_unreliable(received, mtu as usize).await,
-        Suite::Commutative => client.bench_commutative(received, batch_size).await,
-        Suite::Ordered => client.bench_ordered(received, batch_size).await,
-    };
-    println!("=== END ===");
-    res
+    let histogram = AtomicHistogram::new(7, 64)?;
+    println!("=== BENCHMARK START ===");
+    let output = match suite {
+        Suite::Unreliable => {
+            client
+                .bench_unreliable(received, mtu as usize, &histogram)
+                .await
+        }
+        Suite::Commutative => {
+            client
+                .bench_commutative(received, batch_size, &histogram)
+                .await
+        }
+        Suite::Ordered => client.bench_ordered(received, batch_size, &histogram).await,
+    }?;
+    println!("{}", output);
+    print_histogram(histogram.load(), brief);
+    println!("=== BENCHMARK ENDED ===");
+    Ok(())
+}
+
+fn print_histogram(histogram: Histogram, brief: bool) {
+    println!("delay histogram:");
+    let cols = termsize::get().unwrap().cols;
+    let sum: u64 = histogram.as_slice().iter().sum();
+    for bucket in histogram.into_iter() {
+        if bucket.count() == 0 {
+            continue;
+        }
+        let range = bucket.range();
+        let prefix = format!(
+            "{:05} ~ {:05} us | {} \t",
+            range.start(),
+            range.end(),
+            bucket.count()
+        );
+        let cols = cols as usize - prefix.len();
+        let cols = (bucket.count() as f64 / sum as f64 * cols as f64) as usize;
+        if brief && cols == 0 {
+            continue;
+        }
+        println!("{prefix}{}", "⬛".repeat(cols));
+    }
 }

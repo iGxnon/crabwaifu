@@ -10,7 +10,9 @@ clap = { version = "4.0", features = ["derive"] }
 crabwaifu-common = { workspace = true }
 futures = { version = "0.3", default-features = false }
 futures-async-stream = "0.2"
+histogram = "0.11.1"
 humansize = "2.0.0"
 raknet-rs = { workspace = true }
 rustyline = "14.0.0"
+termsize = "0.1"
 tokio = { version = "1", features = ["full"] }

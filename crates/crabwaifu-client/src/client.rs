@@ -8,6 +8,7 @@ use crabwaifu_common::proto::chat::{self, Message};
 use crabwaifu_common::proto::{bench, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use futures::Stream;
+use histogram::AtomicHistogram;
 use raknet_rs::client::{self, ConnectTo};
 use tokio::net::{self, TcpSocket};
 use tokio::sync::Notify;
@@ -115,9 +116,14 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
-    pub async fn bench_unreliable(&mut self, received: usize, mtu: usize) -> anyhow::Result<()> {
-        println!("=== Unreliable Connection Benchmark ===");
+    pub async fn bench_unreliable(
+        &mut self,
+        received: usize,
+        mtu: usize,
+        delay_histogram: &AtomicHistogram,
+    ) -> anyhow::Result<String> {
         let start_at = Instant::now();
+        let mut last_recv_at = start_at;
         let mut actual_received = 0;
         self.tx
             .send_pack(bench::UnreliableRequest {
@@ -127,6 +133,9 @@ impl<T: Tx, R: Rx> Client<T, R> {
             .await?;
         loop {
             let pack = self.rx.recv_pack().await?;
+            let delay = last_recv_at.elapsed().as_micros();
+            delay_histogram.increment(delay as u64)?;
+            last_recv_at = Instant::now();
             match pack {
                 Packet::BenchUnreliableRequest(_) => break, // EOF
                 Packet::BenchUnreliableResponse(res) => {
@@ -136,24 +145,24 @@ impl<T: Tx, R: Rx> Client<T, R> {
             }
         }
         let dur = start_at.elapsed();
-        println!(
+        Ok(format!(
             "expect received {}\nactual received {}\nlost ratio {}\ncost {}ms\nrecv rate {}",
             bytes(received),
             bytes(actual_received),
             1.0 - actual_received as f64 / received as f64,
             dur.as_millis_f64(),
             rate(actual_received, dur)
-        );
-        Ok(())
+        ))
     }
 
     pub async fn bench_commutative(
         &mut self,
         received: usize,
         batch_size: usize,
-    ) -> anyhow::Result<()> {
-        println!("=== Commutative Connection Benchmark ===");
+        delay_histogram: &AtomicHistogram,
+    ) -> anyhow::Result<String> {
         let start_at = Instant::now();
+        let mut last_recv_at = start_at;
         self.tx
             .send_pack(bench::CommutativeRequest {
                 data_len: received,
@@ -163,6 +172,9 @@ impl<T: Tx, R: Rx> Client<T, R> {
         let mut total_received = 0;
         loop {
             let pack = self.rx.recv_pack().await?;
+            let delay = last_recv_at.elapsed().as_micros();
+            delay_histogram.increment(delay as u64)?;
+            last_recv_at = Instant::now();
             if let Packet::BenchCommutativeResponse(res) = pack {
                 total_received += res.data_partial.len();
             } else {
@@ -173,22 +185,22 @@ impl<T: Tx, R: Rx> Client<T, R> {
             }
         }
         let dur = start_at.elapsed();
-        println!(
-            "expect received {}\ncost {}ms\nrecv rate {}",
+        Ok(format!(
+            "received {}\ncost {}ms\nrecv rate {}",
             bytes(received),
             dur.as_millis_f64(),
             rate(total_received, dur)
-        );
-        Ok(())
+        ))
     }
 
     pub async fn bench_ordered(
         &mut self,
         received: usize,
         batch_size: usize,
-    ) -> anyhow::Result<()> {
-        println!("=== Ordered Connection Benchmark ===");
+        delay_histogram: &AtomicHistogram,
+    ) -> anyhow::Result<String> {
         let start_at = Instant::now();
+        let mut last_recv_at = start_at;
         self.tx
             .send_pack(bench::OrderedRequest {
                 data_len: received,
@@ -199,6 +211,9 @@ impl<T: Tx, R: Rx> Client<T, R> {
         let mut expect_index = 0;
         loop {
             let pack = self.rx.recv_pack().await?;
+            let delay = last_recv_at.elapsed().as_micros();
+            delay_histogram.increment(delay as u64)?;
+            last_recv_at = Instant::now();
             if let Packet::BenchOrderedResponse(res) = pack {
                 total_received += res.data_partial.len();
                 assert_eq!(res.index, expect_index); // ordered
@@ -211,13 +226,12 @@ impl<T: Tx, R: Rx> Client<T, R> {
             }
         }
         let dur = start_at.elapsed();
-        println!(
-            "expect received {}\ncost {}ms\nrecv rate {}",
+        Ok(format!(
+            "received {}\ncost {}ms\nrecv rate {}",
             bytes(received),
             dur.as_millis_f64(),
             rate(total_received, dur)
-        );
-        Ok(())
+        ))
     }
 
     pub async fn finish(&self) {
