@@ -11,9 +11,9 @@ use tokio::time;
 use super::PinWriter;
 use crate::utils::TimeoutWrapper;
 
-// Default options
-const DEFAULT_FLUSH_DELAY: Duration = Duration::from_millis(10); // 10ms -- The fastest time for the server to process a small piece of data.
-const DEFAULT_BUF_SIZE: usize = 8; // Do not buffer too many messages
+// Default options (DEFAULT_FLUSH_DELAY <= DEFAULT_BUF_SIZE * PROCESS_DELAY)
+const DEFAULT_FLUSH_DELAY: Duration = Duration::from_millis(1); // The maximum delay accepted by peer or the minimum delay of processing a piece of data
+const DEFAULT_BUF_SIZE: usize = 4096; // The maximum pending messages waiting for a flush
 const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Spawn the flush task and return the handles of it

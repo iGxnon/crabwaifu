@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{cmp, fmt};
 
 use clap::ValueEnum;
 use crabwaifu_common::network::{Rx, Tx};
@@ -56,22 +56,52 @@ fn print_histogram(histogram: Histogram, brief: bool) {
     println!("delay histogram:");
     let cols = termsize::get().unwrap().cols;
     let sum: u64 = histogram.as_slice().iter().sum();
+    let count_digits = digits(
+        histogram
+            .as_slice()
+            .iter()
+            .max()
+            .copied()
+            .unwrap_or_default(),
+    );
+    let mut min_delay = u64::MAX;
+    let mut max_delay = 0;
     for bucket in histogram.into_iter() {
         if bucket.count() == 0 {
             continue;
         }
         let range = bucket.range();
+        max_delay = cmp::max(max_delay, *range.end());
+        min_delay = cmp::min(min_delay, *range.start());
         let prefix = format!(
-            "{:05} ~ {:05} us | {} \t",
+            "{:06} ~ {:06} us | {} ",
             range.start(),
             range.end(),
-            bucket.count()
+            pad_digits(bucket.count(), count_digits)
         );
         let cols = cols as usize - prefix.len();
         let cols = (bucket.count() as f64 / sum as f64 * cols as f64) as usize;
         if brief && cols == 0 {
             continue;
         }
-        println!("{prefix}{}", "⬛".repeat(cols));
+        println!("{prefix}{}", "█".repeat(cols));
     }
+    println!("max delay {max_delay} us, min delay {min_delay} us");
+}
+
+fn digits(mut num: u64) -> usize {
+    let mut ret = 0;
+    while num > 0 {
+        ret += 1;
+        num /= 10;
+    }
+    ret
+}
+
+fn pad_digits(num: u64, digit: usize) -> String {
+    let mut ret = num.to_string();
+    while ret.len() < digit {
+        ret.insert(0, ' ');
+    }
+    ret
 }
