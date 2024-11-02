@@ -7,7 +7,7 @@ use futures::{Sink, Stream, StreamExt};
 use raknet_rs::{Message, Reliability};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedSender};
 
 mod flusher;
 mod tcp;
@@ -29,7 +29,7 @@ pub trait Pack: Serialize + DeserializeOwned + Send + Sync + 'static {
 }
 
 // Sending packets within many threads, so this is a shared reference
-pub trait Tx: Send + Sync {
+pub trait Tx: Send + Sync + 'static {
     fn send_raw(&self, msg: Message) -> impl Future<Output = io::Result<()>> + Send + Sync;
 
     /// Send a packet with reliability and order channel specified in P
@@ -56,7 +56,7 @@ pub trait Tx: Send + Sync {
 
 /// Receiving packets happens only in one place, so this is an exclusive reference (mutable
 /// reference)
-pub trait Rx: Send + Sync {
+pub trait Rx: Send + Sync + 'static {
     fn recv_raw(&mut self) -> impl Future<Output = io::Result<Bytes>> + Send + Sync;
 
     fn recv_pack(&mut self) -> impl Future<Output = io::Result<Packet>> + Send + Sync {
@@ -137,6 +137,13 @@ impl Tx for mpsc::Sender<Message> {
     async fn send_raw(&self, msg: Message) -> io::Result<()> {
         self.send(msg)
             .await
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "flusher closed"))
+    }
+}
+
+impl Tx for UnboundedSender<Message> {
+    async fn send_raw(&self, msg: Message) -> io::Result<()> {
+        self.send(msg)
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "flusher closed"))
     }
 }

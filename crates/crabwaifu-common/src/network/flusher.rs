@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use futures::SinkExt;
 use raknet_rs::Message;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 use tokio::time;
@@ -11,16 +12,14 @@ use tokio::time;
 use super::PinWriter;
 use crate::utils::TimeoutWrapper;
 
-// Default options (DEFAULT_FLUSH_DELAY <= DEFAULT_BUF_SIZE * PROCESS_DELAY)
 const DEFAULT_FLUSH_DELAY: Duration = Duration::from_millis(1); // The maximum delay accepted by peer or the minimum delay of processing a piece of data
-const DEFAULT_BUF_SIZE: usize = 4096; // The maximum pending messages waiting for a flush
 const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Spawn the flush task and return the handles of it
 pub fn spawn_flush_task(
     writer: impl PinWriter,
 ) -> (
-    mpsc::Sender<Message>,
+    UnboundedSender<Message>,
     Arc<Notify>,
     Arc<Notify>,
     JoinHandle<()>,
@@ -28,7 +27,7 @@ pub fn spawn_flush_task(
     let mut ticker = time::interval(DEFAULT_FLUSH_DELAY);
     ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
-    let (mut flusher, tx) = Flusher::new(writer, DEFAULT_BUF_SIZE, ticker);
+    let (mut flusher, tx) = Flusher::new(writer, ticker);
     let flush_notify = Arc::new(Notify::new());
     let close_notify = Arc::new(Notify::new());
 
@@ -84,13 +83,13 @@ pub fn spawn_flush_task(
 /// A naive auto balanced flush controller for each connection
 struct Flusher<W: PinWriter> {
     writer: W,
-    buffer: mpsc::Receiver<Message>,
+    buffer: UnboundedReceiver<Message>,
     ticker: time::Interval,
 }
 
 impl<W: PinWriter> Flusher<W> {
-    fn new(writer: W, size: usize, ticker: time::Interval) -> (Self, mpsc::Sender<Message>) {
-        let (tx, rx) = mpsc::channel(size);
+    fn new(writer: W, ticker: time::Interval) -> (Self, UnboundedSender<Message>) {
+        let (tx, rx) = mpsc::unbounded_channel();
         let flusher = Self {
             writer,
             buffer: rx,
