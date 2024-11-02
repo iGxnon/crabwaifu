@@ -31,9 +31,7 @@ mkdir -p /logs/qlog
 
 echo "Starting endpoint..."
 
-if [ $ENDPOINT == "crabwaifu-client" ]; then
-  echo "Waiting for the sim net to be ready..."
-  /wait-for-it.sh sim:57832 -s -t 30
-fi
+echo "Waiting for the sim net to be ready..."
+/wait-for-it.sh sim:57832 -s -t 30
 
 $ENDPOINT $@ 2>&1 | tee /logs/endpoint.log

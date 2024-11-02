@@ -147,11 +147,11 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
         let dur = start_at.elapsed();
         Ok(format!(
-            "expect received {}\nactual received {}\nlost ratio {}\ncost {}ms\nrecv rate {}",
+            "expect received\t{}\nactual received\t{}\nlost ratio\t{}\ncost\t{:?}\nrecv rate\t{}",
             bytes(received),
             bytes(actual_received),
             1.0 - actual_received as f64 / received as f64,
-            dur.as_millis_f64(),
+            dur,
             rate(actual_received, dur)
         ))
     }
@@ -188,9 +188,10 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
         let dur = start_at.elapsed();
         Ok(format!(
-            "received {}\ncost {}ms\nrecv rate {}",
+            "received\t{}\nbatch size\t{}\ncost\t{:?}\nrecv rate\t{}",
             bytes(received),
-            dur.as_millis_f64(),
+            bytes(batch_size),
+            dur,
             rate(total_received, dur)
         ))
     }
@@ -230,9 +231,10 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
         let dur = start_at.elapsed();
         Ok(format!(
-            "received {}\ncost {}ms\nrecv rate {}",
+            "received\t{}\nbatch size\t{}\ncost\t{:?}\nrecv rate\t{}",
             bytes(received),
-            dur.as_millis_f64(),
+            bytes(batch_size),
+            dur,
             rate(total_received, dur)
         ))
     }

@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::{cmp, fmt};
 
 use clap::ValueEnum;
@@ -66,6 +67,7 @@ fn print_histogram(histogram: Histogram, brief: bool) {
     );
     let mut min_delay = u64::MAX;
     let mut max_delay = 0;
+    let histogram_c = histogram.clone();
     for bucket in histogram.into_iter() {
         if bucket.count() == 0 {
             continue;
@@ -74,7 +76,7 @@ fn print_histogram(histogram: Histogram, brief: bool) {
         max_delay = cmp::max(max_delay, *range.end());
         min_delay = cmp::min(min_delay, *range.start());
         let prefix = format!(
-            "{:06} ~ {:06} us | {} ",
+            "{:06} ~ {:06} µs | {} ",
             range.start(),
             range.end(),
             pad_digits(bucket.count(), count_digits)
@@ -86,7 +88,19 @@ fn print_histogram(histogram: Histogram, brief: bool) {
         }
         println!("{prefix}{}", "█".repeat(cols));
     }
-    println!("max delay {max_delay} us, min delay {min_delay} us");
+    let p50 = histogram_c.percentile(50.0).unwrap().unwrap().start();
+    let p95 = histogram_c.percentile(95.0).unwrap().unwrap().start();
+    let p999 = histogram_c.percentile(99.9).unwrap().unwrap().start();
+    let p9999 = histogram_c.percentile(99.99).unwrap().unwrap().start();
+    println!(
+        "delay distribution:\nmax\t{:?}\nmin\t{:?}\np50\t{:?}\np95\t{:?}\np99.9\t{:?}\np99.99\t{:?}",
+        Duration::from_micros(max_delay),
+        Duration::from_micros(min_delay),
+        Duration::from_micros(p50),
+        Duration::from_micros(p95),
+        Duration::from_micros(p999),
+        Duration::from_micros(p9999),
+    );
 }
 
 fn digits(mut num: u64) -> usize {
