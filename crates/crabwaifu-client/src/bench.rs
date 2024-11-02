@@ -54,7 +54,7 @@ pub async fn run(
 
 fn print_histogram(histogram: Histogram, brief: bool) {
     println!("delay histogram:");
-    let cols = termsize::get().unwrap().cols;
+    let cols = termsize::get().map(|size| size.cols).unwrap_or(80);
     let sum: u64 = histogram.as_slice().iter().sum();
     let count_digits = digits(
         histogram

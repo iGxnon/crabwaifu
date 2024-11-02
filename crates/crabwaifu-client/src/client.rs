@@ -123,7 +123,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         delay_histogram: &AtomicHistogram,
     ) -> anyhow::Result<String> {
         let start_at = Instant::now();
-        let mut last_recv_at = start_at;
+        let mut last_recv_at: Option<Instant> = None;
         let mut actual_received = 0;
         self.tx
             .send_pack(bench::UnreliableRequest {
@@ -133,9 +133,10 @@ impl<T: Tx, R: Rx> Client<T, R> {
             .await?;
         loop {
             let pack = self.rx.recv_pack().await?;
-            let delay = last_recv_at.elapsed().as_micros();
-            delay_histogram.increment(delay as u64)?;
-            last_recv_at = Instant::now();
+            if let Some(last_recv_at) = last_recv_at {
+                delay_histogram.increment(last_recv_at.elapsed().as_micros() as u64)?;
+            }
+            last_recv_at = Some(Instant::now());
             match pack {
                 Packet::BenchUnreliableRequest(_) => break, // EOF
                 Packet::BenchUnreliableResponse(res) => {
@@ -162,7 +163,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         delay_histogram: &AtomicHistogram,
     ) -> anyhow::Result<String> {
         let start_at = Instant::now();
-        let mut last_recv_at = start_at;
+        let mut last_recv_at: Option<Instant> = None;
         self.tx
             .send_pack(bench::CommutativeRequest {
                 data_len: received,
@@ -172,9 +173,10 @@ impl<T: Tx, R: Rx> Client<T, R> {
         let mut total_received = 0;
         loop {
             let pack = self.rx.recv_pack().await?;
-            let delay = last_recv_at.elapsed().as_micros();
-            delay_histogram.increment(delay as u64)?;
-            last_recv_at = Instant::now();
+            if let Some(last_recv_at) = last_recv_at {
+                delay_histogram.increment(last_recv_at.elapsed().as_micros() as u64)?;
+            }
+            last_recv_at = Some(Instant::now());
             if let Packet::BenchCommutativeResponse(res) = pack {
                 total_received += res.data_partial.len();
             } else {
@@ -200,7 +202,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         delay_histogram: &AtomicHistogram,
     ) -> anyhow::Result<String> {
         let start_at = Instant::now();
-        let mut last_recv_at = start_at;
+        let mut last_recv_at: Option<Instant> = None;
         self.tx
             .send_pack(bench::OrderedRequest {
                 data_len: received,
@@ -211,9 +213,10 @@ impl<T: Tx, R: Rx> Client<T, R> {
         let mut expect_index = 0;
         loop {
             let pack = self.rx.recv_pack().await?;
-            let delay = last_recv_at.elapsed().as_micros();
-            delay_histogram.increment(delay as u64)?;
-            last_recv_at = Instant::now();
+            if let Some(last_recv_at) = last_recv_at {
+                delay_histogram.increment(last_recv_at.elapsed().as_micros() as u64)?;
+            }
+            last_recv_at = Some(Instant::now());
             if let Packet::BenchOrderedResponse(res) = pack {
                 total_received += res.data_partial.len();
                 assert_eq!(res.index, expect_index); // ordered
