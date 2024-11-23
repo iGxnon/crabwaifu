@@ -13,6 +13,7 @@ RUN set -eux; \
     curl https://sh.rustup.rs -sSf | bash -s -- -y --default-toolchain $(cat rust-toolchain);  # cache toolchain
 
 COPY Cargo.toml /app
+COPY Cargo.lock /app
 COPY crates /app/crates
 
 # TODO: cache build dependencies

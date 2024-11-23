@@ -9,6 +9,7 @@ use crabwaifu_common::proto::{bench, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use futures::Stream;
 use histogram::AtomicHistogram;
+use indicatif::ProgressBar;
 use raknet_rs::client::{self, ConnectTo};
 use tokio::net::{self, TcpSocket};
 use tokio::sync::Notify;
@@ -131,6 +132,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
                 mtu,
             })
             .await?;
+        let bar = ProgressBar::new(received as u64);
         loop {
             let pack = self.rx.recv_pack().await?;
             if let Some(last_recv_at) = last_recv_at {
@@ -141,10 +143,12 @@ impl<T: Tx, R: Rx> Client<T, R> {
                 Packet::BenchUnreliableRequest(_) => break, // EOF
                 Packet::BenchUnreliableResponse(res) => {
                     actual_received += res.data_partial.len();
+                    bar.inc(res.data_partial.len() as u64);
                 }
                 _ => bail!("interrupt pack {pack:?}"),
             }
         }
+        bar.finish_and_clear();
         let dur = start_at.elapsed();
         Ok(format!(
             "expect received\t{}\nactual received\t{}\nlost ratio\t{}\ncost\t{:?}\nrecv rate\t{}",
@@ -171,6 +175,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
             })
             .await?;
         let mut total_received = 0;
+        let bar = ProgressBar::new(received as u64);
         loop {
             let pack = self.rx.recv_pack().await?;
             if let Some(last_recv_at) = last_recv_at {
@@ -179,6 +184,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
             last_recv_at = Some(Instant::now());
             if let Packet::BenchCommutativeResponse(res) = pack {
                 total_received += res.data_partial.len();
+                bar.inc(res.data_partial.len() as u64);
             } else {
                 bail!("interrupt pack {pack:?}")
             }
@@ -186,6 +192,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
                 break;
             }
         }
+        bar.finish_and_clear();
         let dur = start_at.elapsed();
         Ok(format!(
             "received\t{}\nbatch size\t{}\ncost\t{:?}\nrecv rate\t{}",
@@ -212,6 +219,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
             .await?;
         let mut total_received = 0;
         let mut expect_index = 0;
+        let bar = ProgressBar::new(received as u64);
         loop {
             let pack = self.rx.recv_pack().await?;
             if let Some(last_recv_at) = last_recv_at {
@@ -220,6 +228,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
             last_recv_at = Some(Instant::now());
             if let Packet::BenchOrderedResponse(res) = pack {
                 total_received += res.data_partial.len();
+                bar.inc(res.data_partial.len() as u64);
                 assert_eq!(res.index, expect_index); // ordered
                 expect_index += 1;
             } else {
@@ -229,6 +238,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
                 break;
             }
         }
+        bar.finish_and_clear();
         let dur = start_at.elapsed();
         Ok(format!(
             "received\t{}\nbatch size\t{}\ncost\t{:?}\nrecv rate\t{}",

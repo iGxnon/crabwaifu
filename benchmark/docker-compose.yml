@@ -86,8 +86,8 @@ services:
       - "--mtu 1480"
       - "bench"
       - "--suite commutative"
-      - "--receive 20000000"
-      - "--batch-size 1460"
+      - "--receive 100000"
+      - "--batch-size 5000"
 
   client-tcp:
     build:
@@ -121,8 +121,8 @@ services:
       - "--mtu 1480"
       - "bench"
       - "--suite commutative"
-      - "--receive 20000000"
-      - "--batch-size 1460"
+      - "--receive 100000"
+      - "--batch-size 5000"
 
 
 networks:

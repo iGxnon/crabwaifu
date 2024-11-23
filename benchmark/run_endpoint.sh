@@ -36,8 +36,14 @@ echo "Waiting for the sim net to be ready..."
 
 PARALLEL="${PARALLEL:-1}"
 
+if [ $PARALLEL -eq 1 ]; then
+  $ENDPOINT $@
+  exit
+fi
+
 for i in $(seq 1 $PARALLEL); do
-  $ENDPOINT $@ 2>&1 > /logs/endpoint${i}.log &
+  echo "Starting endpoint $i"
+  $ENDPOINT $@ > /logs/endpoint${i}.log 2>&1 &
 done
 
 wait
