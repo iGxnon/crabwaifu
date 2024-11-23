@@ -42,9 +42,7 @@ pub trait Tx: Send + Sync + 'static {
         async move {
             let cap = bincode::serialized_size(&pack).unwrap_or_default() as usize + 2;
             let mut writer = BytesMut::with_capacity(cap).writer();
-            writer
-                .write_all(&[0xfe, P::ID as u8])
-                .expect("failed to write ID into buffer");
+            writer.write_all(&[0xfe, P::ID as u8])?;
             bincode::serialize_into(&mut writer, &pack)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
             let buf = writer.into_inner();
@@ -69,8 +67,12 @@ pub trait Rx: Send + Sync + 'static {
             }
 
             let mut raw = self.recv_raw().await?;
-            assert_eq!(raw.get_u8(), 0xfe, "network unavailable");
-
+            if raw.get_u8() != 0xfe {
+                return Err(io::Error::new(
+                    io::ErrorKind::NetworkDown,
+                    "network unavailable",
+                ));
+            }
             let id = PacketID::from_u8(raw.get_u8());
             let pack = match id {
                 PacketID::InvalidPack => {

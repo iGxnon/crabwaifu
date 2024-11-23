@@ -34,4 +34,10 @@ echo "Starting endpoint..."
 echo "Waiting for the sim net to be ready..."
 /wait-for-it.sh sim:57832 -s -t 30
 
-$ENDPOINT $@ 2>&1 | tee /logs/endpoint.log
+PARALLEL="${PARALLEL:-1}"
+
+for i in $(seq 1 $PARALLEL); do
+  $ENDPOINT $@ 2>&1 > /logs/endpoint${i}.log &
+done
+
+wait

@@ -174,7 +174,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 mem::swap(&mut data, &mut data_partial);
                 self.tx
                     .send_pack(bench::UnreliableResponse { data_partial })
-                    .await?
+                    .await?;
             }
             debug_assert!(data.is_empty(), "data remains");
         };
@@ -190,7 +190,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             })
             .await;
         if let Err(err) = res {
-            log::error!("finish data: {err}");
+            log::error!("error: {err}");
         }
     }
 
@@ -210,7 +210,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             debug_assert!(data.is_empty(), "data remains");
         };
         if let Err(err) = res {
-            log::error!("transfer data: {err}");
+            log::error!("error: {err}");
         }
     }
 
@@ -233,7 +233,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             debug_assert!(data.is_empty(), "data remains");
         };
         if let Err(err) = res {
-            log::error!("transfer data: {err}");
+            log::error!("error: {err}");
         }
     }
 

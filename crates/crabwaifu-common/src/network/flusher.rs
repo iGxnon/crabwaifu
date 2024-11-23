@@ -25,7 +25,7 @@ pub fn spawn_flush_task(
     JoinHandle<()>,
 ) {
     let mut ticker = time::interval(DEFAULT_FLUSH_DELAY);
-    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
 
     let (mut flusher, tx) = Flusher::new(writer, ticker);
     let flush_notify = Arc::new(Notify::new());

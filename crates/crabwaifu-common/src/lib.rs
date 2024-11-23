@@ -4,6 +4,7 @@
 #![feature(proc_macro_hygiene)]
 #![feature(coroutines)]
 #![feature(stmt_expr_attributes)]
+#![feature(io_error_more)]
 
 /// Prototypes in network transmission
 pub mod proto;

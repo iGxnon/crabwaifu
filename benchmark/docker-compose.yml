@@ -78,6 +78,7 @@ services:
         ipv6_address: fd00:cafe:cafe:0::100
     environment:
       - ENDPOINT=crabwaifu-client
+      - PARALLEL=1
     entrypoint: ["./run_endpoint.sh"]
     command:
       - "-E 193.167.100.100:8808"
@@ -112,6 +113,7 @@ services:
         ipv6_address: fd00:cafe:cafe:0::100
     environment:
       - ENDPOINT=crabwaifu-client
+      - PARALLEL=1
     entrypoint: ["./run_endpoint.sh"]
     command:
       - "-E 193.167.100.100:8808"
