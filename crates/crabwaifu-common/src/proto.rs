@@ -1,4 +1,4 @@
-use raknet_rs::Reliability;
+use raknet_rs::{Priority, Reliability};
 use serde::{Deserialize, Serialize};
 
 use crate::network::Pack;
@@ -103,6 +103,7 @@ pub mod chat {
     impl Pack for Request {
         const ID: PacketID = PacketID::ChatRequest;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable;
     }
 
@@ -110,6 +111,7 @@ pub mod chat {
     impl Pack for Response {
         const ID: PacketID = PacketID::ChatResponse;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable;
     }
 
@@ -133,12 +135,14 @@ pub mod chat {
     impl Pack for StreamRequest {
         const ID: PacketID = PacketID::ChatStreamRequest;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::ReliableOrdered;
     }
 
     impl Pack for StreamResponse {
         const ID: PacketID = PacketID::ChatStreamResponse;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::ReliableOrdered;
     }
 }
@@ -168,12 +172,14 @@ pub mod bench {
     impl Pack for UnreliableRequest {
         const ID: PacketID = PacketID::BenchUnreliableRequest;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable; // ensure it is received by peer
     }
 
     impl Pack for UnreliableResponse {
         const ID: PacketID = PacketID::BenchUnreliableResponse;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Unreliable;
     }
 
@@ -192,12 +198,14 @@ pub mod bench {
     impl Pack for CommutativeRequest {
         const ID: PacketID = PacketID::BenchCommutativeRequest;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable;
     }
 
     impl Pack for CommutativeResponse {
         const ID: PacketID = PacketID::BenchCommutativeResponse;
         const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable;
     }
 
@@ -217,12 +225,14 @@ pub mod bench {
     impl Pack for OrderedRequest {
         const ID: PacketID = PacketID::BenchOrderedRequest;
         const ORDER_CHANNEL: u8 = 200;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable;
     }
 
     impl Pack for OrderedResponse {
         const ID: PacketID = PacketID::BenchOrderedResponse;
         const ORDER_CHANNEL: u8 = 200;
+        const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::ReliableOrdered;
     }
 }

@@ -17,7 +17,7 @@ pub fn tcp_split(stream: TcpStream) -> (impl PinReader, impl PinWriter) {
         .filter_map(|v| async move { v.ok().map(BytesMut::freeze) });
     let w = LengthDelimitedCodec::builder()
         .new_write(writer)
-        .with(|msg: Message| async move { Ok(msg.into_data()) });
+        .with(|msg: Message| async move { Ok(msg.data) });
     (Box::pin(r), Box::pin(w))
 }
 

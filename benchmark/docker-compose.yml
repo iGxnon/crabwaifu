@@ -78,16 +78,14 @@ services:
         ipv6_address: fd00:cafe:cafe:0::100
     environment:
       - ENDPOINT=crabwaifu-client
-      - PARALLEL=1
+      - PARALLEL=$PARALLEL
     entrypoint: ["./run_endpoint.sh"]
     command:
       - "-E 193.167.100.100:8808"
       - "-N raknet"
-      - "--mtu 1480"
+      - "--mtu $MTU"
       - "bench"
-      - "--suite commutative"
-      - "--receive 100000"
-      - "--batch-size 5000"
+      - $BENCH_OPTS
 
   client-tcp:
     build:
@@ -113,16 +111,14 @@ services:
         ipv6_address: fd00:cafe:cafe:0::100
     environment:
       - ENDPOINT=crabwaifu-client
-      - PARALLEL=1
+      - PARALLEL=$PARALLEL
     entrypoint: ["./run_endpoint.sh"]
     command:
       - "-E 193.167.100.100:8808"
       - "-N tcp"
-      - "--mtu 1480"
+      - "--mtu $MTU"
       - "bench"
-      - "--suite commutative"
-      - "--receive 100000"
-      - "--batch-size 5000"
+      - $BENCH_OPTS
 
 
 networks:

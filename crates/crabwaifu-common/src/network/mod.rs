@@ -4,7 +4,7 @@ use std::io::Write;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::{Sink, Stream, StreamExt};
-use raknet_rs::{Message, Reliability};
+use raknet_rs::{Message, Priority, Reliability};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -25,6 +25,7 @@ pub trait PinReader = Stream<Item = Bytes> + Unpin + Send + Sync + 'static;
 pub trait Pack: Serialize + DeserializeOwned + Send + Sync + 'static {
     const ID: PacketID;
     const RELIABILITY: Reliability;
+    const PRIORITY: Priority;
     const ORDER_CHANNEL: u8;
 }
 
@@ -46,8 +47,13 @@ pub trait Tx: Send + Sync + 'static {
             bincode::serialize_into(&mut writer, &pack)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
             let buf = writer.into_inner();
-            self.send_raw(Message::new(P::RELIABILITY, P::ORDER_CHANNEL, buf.freeze()))
-                .await
+            self.send_raw(
+                Message::new(buf.freeze())
+                    .reliability(P::RELIABILITY)
+                    .order_channel(P::ORDER_CHANNEL)
+                    .priority(P::PRIORITY),
+            )
+            .await
         }
     }
 }

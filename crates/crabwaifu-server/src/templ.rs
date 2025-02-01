@@ -268,7 +268,7 @@ where
     }
 }
 
-impl<'a, T> Iterator for ChatReplyIterator<'a, T>
+impl<T> Iterator for ChatReplyIterator<'_, T>
 where
     T: Iterator<Item = anyhow::Result<String>>,
 {
