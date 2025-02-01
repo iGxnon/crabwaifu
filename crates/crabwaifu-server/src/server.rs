@@ -35,14 +35,14 @@ fn setup_llama_model(
 }
 
 fn dump_gguf_metadata(gf: &GGUFFile) {
-    log::trace!("dump model:");
+    log::debug!("dump model:");
     for (key, value) in gf.metadata().as_hashmap() {
         if value.typ() != GGUFMetadataValueType::Array {
-            log::trace!("{}: {:?}", key, value);
+            log::debug!("{}: {:?}", key, value);
         }
     }
     for tensor in gf.tensor_infos() {
-        log::trace!(
+        log::debug!(
             "- {} \t\t\t {} \t {:?}",
             tensor.name(),
             tensor.typ(),

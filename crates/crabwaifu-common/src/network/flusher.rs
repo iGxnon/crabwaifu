@@ -5,7 +5,7 @@ use std::time::Duration;
 use futures::SinkExt;
 use raknet_rs::Message;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, oneshot, Notify};
 use tokio::task::JoinHandle;
 use tokio::time;
 
@@ -21,7 +21,7 @@ pub fn spawn_flush_task(
 ) -> (
     UnboundedSender<Message>,
     Arc<Notify>,
-    Arc<Notify>,
+    oneshot::Sender<bool>,
     JoinHandle<()>,
 ) {
     let mut ticker = time::interval(DEFAULT_FLUSH_DELAY);
@@ -29,54 +29,45 @@ pub fn spawn_flush_task(
 
     let (mut flusher, tx) = Flusher::new(writer, ticker);
     let flush_notify = Arc::new(Notify::new());
-    let close_notify = Arc::new(Notify::new());
+    let (close_tx, mut close_rx) = oneshot::channel();
 
     let flush_notify_clone = flush_notify.clone();
-    let close_notify_clone = close_notify.clone();
     let handle = tokio::spawn(async move {
-        loop {
+        let wait_2msl = loop {
             tokio::select! {
                 _ = flusher.wait() => {
                     if let Err(err) = flusher.flush().await {
-                        log::error!("unexpected flush error {err}, terminating flush task gracefully");
-                        break
+                        log::error!("unexpected flush error {err}, terminating flush task");
+                        break false;
                     }
                 }
                 _ = flush_notify_clone.notified() => {
                     if let Err(err) = flusher.flush().await {
-                        log::error!("unexpected flush error {err}, terminating flush task gracefully");
-                        break
+                        log::error!("unexpected flush error {err}, terminating flush task");
+                        break false;
                     }
                 }
-                _ = close_notify_clone.notified() => break,
+                res = &mut close_rx => break res.expect("channel never close"),
             }
-        }
+        };
 
         log::info!("destroying flusher...");
         if let Err(err) = flusher.close().await {
             log::error!("unexpected closing error {err}");
-            close_notify_clone.notify_one();
             return;
         }
-
-        // notify the waker that we have closed the flusher
         log::info!("flusher closed");
-        close_notify_clone.notify_one();
-
-        // Both peers will wait for 2MSL, the difference is that the passive closing side can abort
-        // this task in advance.
+        
+        if !wait_2msl {
+            return;
+        }
+        log::info!("wait 2MSL...");
         if let Err(err) = flusher.last_2msl().await {
             log::error!("unexpected shutdown error {err}");
-            close_notify_clone.notify_one();
-            return;
         }
-
-        // notify again the waker that we have shutdown the flusher
-        log::info!("flusher shutdown");
-        close_notify_clone.notify_one();
     });
 
-    (tx, flush_notify, close_notify, handle)
+    (tx, flush_notify, close_tx, handle)
 }
 
 // TODO: add metrics

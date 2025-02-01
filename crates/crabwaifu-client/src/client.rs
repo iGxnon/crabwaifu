@@ -12,22 +12,16 @@ use histogram::AtomicHistogram;
 use indicatif::ProgressBar;
 use raknet_rs::client::{self, ConnectTo};
 use tokio::net::{self, TcpSocket};
-use tokio::sync::Notify;
+use tokio::sync::{oneshot, Notify};
 use tokio::task::JoinHandle;
 
 pub struct Client<T, R> {
     tx: T,
     rx: R,
     flush_notify: Arc<Notify>,
-    close_notify: Arc<Notify>,
-    flush_task: JoinHandle<()>,
+    close_notify: Option<oneshot::Sender<bool>>,
+    flush_task: Option<JoinHandle<()>>,
     is_raknet: bool,
-}
-
-impl<T, R> Drop for Client<T, R> {
-    fn drop(&mut self) {
-        self.flush_task.abort();
-    }
 }
 
 pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
@@ -40,8 +34,8 @@ pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, 
         tx,
         rx,
         flush_notify,
-        close_notify,
-        flush_task,
+        close_notify: Some(close_notify),
+        flush_task: Some(flush_task),
         is_raknet: false,
     };
     Ok(client)
@@ -61,8 +55,8 @@ pub async fn raknet_connect_to(
         tx,
         rx,
         flush_notify,
-        close_notify,
-        flush_task,
+        close_notify: Some(close_notify),
+        flush_task: Some(flush_task),
         is_raknet: true,
     };
     Ok(client)
@@ -249,17 +243,19 @@ impl<T: Tx, R: Rx> Client<T, R> {
         ))
     }
 
-    pub async fn finish(&self) {
-        self.close_notify.notify_one();
+    pub async fn finish(&mut self) {
         let shutdown_timeout = Duration::from_secs(5);
-        // wait for flusher closing
-        let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
-        if self.is_raknet {
-            // TCP handle 2MSL in the kernel, not here
-            // wait for flusher shutdown
-            eprintln!("wait 2MSL...");
-            let _ = self.close_notify.notified().timeout(shutdown_timeout).await;
-        }
+        self.close_notify
+            .take()
+            .unwrap()
+            .send(self.is_raknet) // TCP handle 2MSL in the kernel, not here
+            .unwrap();
+        let _ = self
+            .flush_task
+            .take()
+            .unwrap()
+            .timeout(shutdown_timeout)
+            .await;
     }
 }
 

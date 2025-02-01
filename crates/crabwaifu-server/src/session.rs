@@ -8,7 +8,7 @@ use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
 use crabwaifu_common::proto::{bench, chat, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
-use tokio::sync::{watch, Notify};
+use tokio::sync::{oneshot, watch, Notify};
 use tokio::task::JoinHandle;
 
 use crate::templ::{ChatReplyIterator, ChatTemplate};
@@ -19,17 +19,11 @@ pub struct Session<T, R> {
     tx: T,
     rx: R,
     flush_notify: Arc<Notify>,
-    close_notify: Arc<Notify>,
     llama_runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
     default_steps: usize,
-    flush_task: JoinHandle<()>,
-}
-
-impl<T, R> Drop for Session<T, R> {
-    fn drop(&mut self) {
-        self.flush_task.abort();
-    }
+    close_notify: Option<oneshot::Sender<bool>>,
+    flusher_task: Option<JoinHandle<()>>,
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
@@ -38,7 +32,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
         tx: T,
         rx: R,
         flush_notify: Arc<Notify>,
-        close_notify: Arc<Notify>,
+        close_notify: oneshot::Sender<bool>,
         llama_runner: Llama2Runner<CpuTensor<'static>>,
         default_steps: usize,
         flusher_task: JoinHandle<()>,
@@ -47,11 +41,11 @@ impl<T: Tx, R: Rx> Session<T, R> {
             tx,
             rx,
             flush_notify,
-            close_notify,
             chat_templ: ChatTemplate::heuristic_guess(&llama_runner),
             llama_runner,
             default_steps,
-            flush_task: flusher_task,
+            close_notify: Some(close_notify),
+            flusher_task: Some(flusher_task),
         }
     }
 
@@ -133,6 +127,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             )?;
             for ele in &mut iter {
                 let token = ele?;
+                log::debug!("send token {token}");
                 self.tx
                     .send_pack(chat::StreamResponse {
                         partial: token,
@@ -287,16 +282,13 @@ impl<T: Tx, R: Rx> Session<T, R> {
             }
         };
         let wait_timeout = Duration::from_secs(10);
-        // notify that we'll gonna to shutdown
-        self.close_notify.notify_one();
-        // wait for flusher closing
-        let _ = self.close_notify.notified().timeout(wait_timeout).await;
-        // if we shutdown the server, then wait for the last 2MSL
-        if wait {
-            log::info!("wait 2MSL...");
-            let _ = self.close_notify.notified().timeout(wait_timeout).await;
-        }
+        self.close_notify.take().unwrap().send(wait).unwrap();
+        let _ = self
+            .flusher_task
+            .take()
+            .unwrap()
+            .timeout(wait_timeout)
+            .await;
         log::info!("session shutdown");
-        // TODO: wait all background task of this session to be done and return
     }
 }
