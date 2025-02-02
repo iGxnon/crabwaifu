@@ -1,9 +1,9 @@
 listen_addr = "0.0.0.0:8808"
 network = "both"
 
-# Default llama model configuration, some of them can be overriden by client request
+# Default llama model configuration, some of them can be overridden by client request
 [llama]
-# Avaliable models:
+# Available models:
 # - https://huggingface.co/shenzhi-wang/Llama3.1-8B-Chinese-Chat/blob/main/gguf/llama3.1_8b_chinese_chat_q8_0.gguf
 # - https://huggingface.co/lmstudio-ai/gemma-2b-it-GGUF/blob/main/gemma-2b-it-q8_0.gguf
 # - ... llama family with Q8_0/Q4_0/Q4_1 quantization methods
