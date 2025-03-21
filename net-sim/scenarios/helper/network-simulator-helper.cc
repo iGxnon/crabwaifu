@@ -131,7 +131,7 @@ void NetworkSimulatorHelper::RunSynchronizer() const {
   NS_ABORT_MSG_IF(res < 0, "ERROR on binding");
   // We never intend to accept any of the connections.
   // Use a large backlog queue instead.
-  listen(sockfd, 100);
+  listen(sockfd, 10000);
 }
 
 Ptr<Node> NetworkSimulatorHelper::GetLeftNode() const {

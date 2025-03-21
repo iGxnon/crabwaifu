@@ -50,7 +50,7 @@ services:
         ipv6_address: fd00:cafe:cafe:100::100
     environment:
       - ENDPOINT=crabwaifu-server
-      - RUST_LOG=debug
+      - RUST_LOG=trace
     entrypoint: ["./run_endpoint.sh"]
     command: ["server.toml"]
 

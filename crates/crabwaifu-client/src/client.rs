@@ -130,7 +130,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         loop {
             let pack = self.rx.recv_pack().await?;
             if let Some(last_recv_at) = last_recv_at {
-                delay_histogram.increment(last_recv_at.elapsed().as_micros() as u64)?;
+                delay_histogram.increment(last_recv_at.elapsed().as_nanos() as u64)?;
             }
             last_recv_at = Some(Instant::now());
             match pack {
@@ -173,7 +173,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         loop {
             let pack = self.rx.recv_pack().await?;
             if let Some(last_recv_at) = last_recv_at {
-                delay_histogram.increment(last_recv_at.elapsed().as_micros() as u64)?;
+                delay_histogram.increment(last_recv_at.elapsed().as_nanos() as u64)?;
             }
             last_recv_at = Some(Instant::now());
             if let Packet::BenchCommutativeResponse(res) = pack {
@@ -217,7 +217,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         loop {
             let pack = self.rx.recv_pack().await?;
             if let Some(last_recv_at) = last_recv_at {
-                delay_histogram.increment(last_recv_at.elapsed().as_micros() as u64)?;
+                delay_histogram.increment(last_recv_at.elapsed().as_nanos() as u64)?;
             }
             last_recv_at = Some(Instant::now());
             if let Packet::BenchOrderedResponse(res) = pack {

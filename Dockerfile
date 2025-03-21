@@ -28,7 +28,7 @@ SHELL ["/bin/bash", "-c"]
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y libssl-dev wget net-tools iputils-ping tcpdump ethtool iperf3 iproute2 libvulkan-dev mesa-vulkan-drivers vulkan-tools; \
+    apt-get install -y libssl-dev wget net-tools telnet iputils-ping tcpdump ethtool iperf3 iproute2 libvulkan-dev mesa-vulkan-drivers vulkan-tools; \
     rm -rf /var/lib/apt/lists/*; \
     wget https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh; \
     chmod +x wait-for-it.sh;
@@ -45,7 +45,7 @@ SHELL ["/bin/bash", "-c"]
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y libssl-dev wget net-tools iputils-ping tcpdump ethtool iperf3 iproute2; \
+    apt-get install -y libssl-dev wget net-tools telnet iputils-ping tcpdump ethtool iperf3 iproute2; \
     rm -rf /var/lib/apt/lists/*; \
     wget https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh; \
     chmod +x wait-for-it.sh;

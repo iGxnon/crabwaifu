@@ -1,10 +1,12 @@
 1. Start with 1 client (PARALLEL=1)
 
+- $ docker compose down
 - $ docker compose up sim server -d
 - $ docker compose run -it --rm client-xxx
 
 2. Start with N client (PARALLEL=N)
 
+- $ docker compose down
 - $ docker compose up sim server client-xxx
 - check `logs/client-xxx`
 

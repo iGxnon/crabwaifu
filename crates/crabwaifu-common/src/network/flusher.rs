@@ -52,7 +52,6 @@ pub fn spawn_flush_task(
 }
 
 // TODO: add metrics
-/// A naive auto balanced flush controller for each connection
 struct Flusher<W: PinWriter> {
     writer: W,
     ticker: time::Interval,

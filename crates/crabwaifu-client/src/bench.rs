@@ -79,7 +79,7 @@ fn print_histogram(histogram: Histogram, brief: bool) {
         max_delay = cmp::max(max_delay, *range.end());
         min_delay = cmp::min(min_delay, *range.start());
         let prefix = format!(
-            "{:06} ~ {:06} µs | {} ",
+            "{:09} ~ {:09} ns | {} ",
             range.start(),
             range.end(),
             pad_digits(bucket.count(), count_digits)
@@ -97,12 +97,12 @@ fn print_histogram(histogram: Histogram, brief: bool) {
     let p9999 = histogram_c.percentile(99.99).unwrap().unwrap().start();
     println!(
         "delay distribution:\nmax\t{:?}\nmin\t{:?}\np50\t{:?}\np95\t{:?}\np99.9\t{:?}\np99.99\t{:?}",
-        Duration::from_micros(max_delay),
-        Duration::from_micros(min_delay),
-        Duration::from_micros(p50),
-        Duration::from_micros(p95),
-        Duration::from_micros(p999),
-        Duration::from_micros(p9999),
+        Duration::from_nanos(max_delay),
+        Duration::from_nanos(min_delay),
+        Duration::from_nanos(p50),
+        Duration::from_nanos(p95),
+        Duration::from_nanos(p999),
+        Duration::from_nanos(p9999),
     );
 }
 

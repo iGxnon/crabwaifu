@@ -17,7 +17,6 @@ f16_kv_cache = true                  # Enable f16 key-value cache, it reduces th
 max_context_length = 4096            # It should not be less than the value in the model parameter file.
 
 [raknet]
-send_buf_cap = 1024
 sever_guid = 4170652262067404866
 advertisement = "Hi, I am server"
 min_mtu = 480
