@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use crabwaifu_client::client::{raknet_connect_to, tcp_connect_to, Client};
-use crabwaifu_client::{bench, cli};
+use crabwaifu_client::{bench, cli, ui};
 use crabwaifu_common::network::{Rx, Tx};
 
 #[derive(Debug, Parser)]
@@ -40,6 +40,7 @@ enum Command {
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
     },
+    Ui,
     Bench {
         /// unreliable|commutative|ordered
         #[arg(short, long)]
@@ -60,6 +61,7 @@ enum Command {
 async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Result<()> {
     match args.command {
         Command::Cli { verbose } => cli::run(client, verbose).await,
+        Command::Ui => ui::run_ui(),
         Command::Bench {
             suite,
             receive,
