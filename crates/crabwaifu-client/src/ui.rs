@@ -1,4 +1,3 @@
-use gtk::glib::ExitCode;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, Button};
 
@@ -12,7 +11,7 @@ pub fn run_ui() -> anyhow::Result<()> {
     app.connect_activate(build_ui);
 
     // Run the application
-    assert_eq!(app.run(), ExitCode::SUCCESS);
+    app.run_with_args(&Vec::<String>::new());
 
     Ok(())
 }
