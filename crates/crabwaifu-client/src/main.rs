@@ -61,7 +61,7 @@ enum Command {
 async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Result<()> {
     match args.command {
         Command::Cli { verbose } => cli::run(client, verbose).await,
-        Command::Ui => ui::run_ui(),
+        Command::Ui => ui::run_ui(client).await,
         Command::Bench {
             suite,
             receive,
