@@ -1,0 +1,13 @@
+{
+    "Servers": {
+        "1": {
+            "Name": "DB",
+            "Group": "Server Group 1",
+            "Port": 5432,
+            "Username": "yui",
+            "Host": "db",
+            "SSLMode": "prefer",
+            "MaintenanceDB": "postgres"
+        }
+    }
+}

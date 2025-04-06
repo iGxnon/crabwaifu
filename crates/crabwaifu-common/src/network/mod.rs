@@ -15,7 +15,7 @@ mod tcp;
 pub use flusher::spawn_flush_task;
 pub use tcp::{tcp_split, TcpListenerStream};
 
-use crate::proto::{bench, chat, Packet, PacketID};
+use crate::proto::{bench, chat, user, Packet, PacketID};
 
 // I am the loyal fan of static dispatch(
 // Ensure unpin here cz i do not want to write too many projections
@@ -98,6 +98,24 @@ pub trait Rx: Send + Sync + 'static {
                 }
                 PacketID::ChatStreamResponse => {
                     deserialize!(chat::StreamResponse, Packet::ChatStreamResponse, raw)
+                }
+                PacketID::UserLoginRequest => {
+                    deserialize!(user::LoginRequest, Packet::UserLoginRequest, raw)
+                }
+                PacketID::UserLoginResponse => {
+                    deserialize!(user::LoginResponse, Packet::UserLoginResponse, raw)
+                }
+                PacketID::UserRegisterRequest => {
+                    deserialize!(user::RegisterRequest, Packet::UserRegisterRequest, raw)
+                }
+                PacketID::UserRegisterResponse => {
+                    deserialize!(user::RegisterResponse, Packet::UserRegisterResponse, raw)
+                }
+                PacketID::UserCleanupRequest => {
+                    deserialize!(user::CleanupRequest, Packet::UserCleanupRequest, raw)
+                }
+                PacketID::UserCleanupResponse => {
+                    deserialize!(user::CleanupResponse, Packet::UserCleanupResponse, raw)
                 }
                 PacketID::BenchUnreliableRequest => {
                     deserialize!(

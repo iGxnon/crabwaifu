@@ -6,14 +6,22 @@ use crabml::cpu::CpuTensor;
 use crabml_llama2::llama2::Llama2Runner;
 use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
-use crabwaifu_common::proto::{bench, chat, Packet};
+use crabwaifu_common::proto::{bench, chat, user, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
+use rand::random_bool;
 use tokio::sync::{oneshot, watch, Notify};
 use tokio::task::JoinHandle;
 
+use crate::db;
 use crate::templ::{ChatReplyIterator, ChatTemplate};
 
 const CONSERVATIVE_HEAD_SIZE: usize = 17;
+
+struct UserContext {
+    user_id: i32,
+    context: Vec<Message>,
+    init_len: usize,
+}
 
 pub struct Session<T, R> {
     tx: T,
@@ -24,6 +32,7 @@ pub struct Session<T, R> {
     default_steps: usize,
     close_notify: Option<oneshot::Sender<bool>>,
     flusher_task: Option<JoinHandle<()>>,
+    user_context: Option<UserContext>,
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
@@ -46,6 +55,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             default_steps,
             close_notify: Some(close_notify),
             flusher_task: Some(flusher_task),
+            user_context: None,
         }
     }
 
@@ -125,17 +135,35 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 self.default_steps,
                 &mut has_stop_mark,
             )?;
+            if let Some(context) = &mut self.user_context {
+                // save context in memory
+                context.context.push(Message {
+                    role: chat::Role::User,
+                    content: request.prompt,
+                });
+            }
+            let mut response = String::new();
             for ele in &mut iter {
                 let token = ele?;
-                log::debug!("send token {token}");
+                response.push_str(&token);
                 self.tx
                     .send_pack(chat::StreamResponse {
                         partial: token,
                         eos: false,
                     })
                     .await?;
+                // blocking iterator, random yield to other tasks
+                random_yield().await;
             }
             drop(iter);
+            log::debug!("chat response: {response}");
+            if let Some(context) = &mut self.user_context {
+                // save context in memory
+                context.context.push(Message {
+                    role: chat::Role::Assistant,
+                    content: response,
+                });
+            }
             if !has_stop_mark {
                 log::debug!("appended stop mark: {stop_mark}");
                 self.llama_runner.prefill(stop_mark, false, false)?;
@@ -233,6 +261,140 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     #[inline]
+    async fn handle_login(&mut self, request: user::LoginRequest) {
+        let username = request.username;
+        let pwd_raw = request.password;
+        let res: anyhow::Result<()> = try {
+            let res: Result<(String, i32), sqlx::Error> =
+                sqlx::query_as("SELECT pass_hash, id FROM users WHERE username = $1")
+                    .bind(username.clone())
+                    .fetch_one(db::pool())
+                    .await;
+            let (pwd_hash, user_id) = match res {
+                Ok(res) => res,
+                Err(err) => {
+                    self.tx
+                        .send_pack(user::LoginResponse {
+                            success: false,
+                            message: if err.to_string().contains("no rows") {
+                                "User not found".to_string()
+                            } else {
+                                format!("Database error: {err}")
+                            },
+                            context: Vec::new(),
+                        })
+                        .await?;
+                    return;
+                }
+            };
+            if db::pbkdf2().verify(pwd_raw, pwd_hash) {
+                // query user context
+                let (mut context_str,): (String,) =
+                    sqlx::query_as("SELECT context FROM history WHERE user_id = $1")
+                        .bind(user_id)
+                        .fetch_one(db::pool())
+                        .await
+                        .unwrap_or_default(); // may not exists
+                if context_str.is_empty() {
+                    context_str.push_str("[]");
+                }
+                let context: Vec<Message> = serde_json::from_str(&context_str)?;
+                if !context.is_empty() {
+                    // load user context
+                    let _ignore = self.oneshot_completion(&context, self.default_steps)?;
+                }
+                // return to user
+                self.tx
+                    .send_pack(user::LoginResponse {
+                        success: true,
+                        message: String::new(),
+                        context: context.clone(),
+                    })
+                    .await?;
+                // save user context to memory
+                self.user_context = Some(UserContext {
+                    init_len: context.len(),
+                    user_id,
+                    context,
+                });
+            } else {
+                self.tx
+                    .send_pack(user::LoginResponse {
+                        success: false,
+                        message: "Password incorrect".to_string(),
+                        context: Vec::new(),
+                    })
+                    .await?;
+            }
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_register(&mut self, request: user::RegisterRequest) {
+        let username = request.username;
+        let pwd_raw = request.password;
+        let res: anyhow::Result<()> = try {
+            let failed = sqlx::query("INSERT INTO users (username, pass_hash) VALUES ($1, $2)")
+                .bind(username)
+                .bind(db::pbkdf2().key(pwd_raw))
+                .execute(db::pool())
+                .await
+                .is_err();
+            if failed {
+                self.tx
+                    .send_pack(user::RegisterResponse {
+                        success: false,
+                        message: "User already exists".to_string(),
+                    })
+                    .await?
+            } else {
+                self.tx
+                    .send_pack(user::RegisterResponse {
+                        success: true,
+                        message: String::new(),
+                    })
+                    .await?
+            }
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_user_cleanup(&mut self, _: user::CleanupRequest) {
+        let res: anyhow::Result<()> = try {
+            let Some(context) = &self.user_context else {
+                self.tx
+                    .send_pack(user::CleanupResponse {
+                        success: false,
+                        message: "User not logged in".to_string(),
+                    })
+                    .await?;
+                return;
+            };
+            let user_id = context.user_id;
+            self.user_context = Some(UserContext {
+                user_id,
+                context: Vec::new(),
+                init_len: 0,
+            });
+            self.tx
+                .send_pack(user::CleanupResponse {
+                    success: true,
+                    message: String::new(),
+                })
+                .await?;
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
     async fn handle_pack(&mut self, pack: Packet) {
         match pack {
             Packet::ChatRequest(request) => {
@@ -242,6 +404,18 @@ impl<T: Tx, R: Rx> Session<T, R> {
             Packet::ChatStreamRequest(request) => {
                 log::info!("got ChatStreamRequest");
                 self.handle_chat_stream(request).await;
+            }
+            Packet::UserRegisterRequest(request) => {
+                log::info!("got UserRegisterRequest");
+                self.handle_register(request).await;
+            }
+            Packet::UserLoginRequest(request) => {
+                log::info!("got UserLoginRequest");
+                self.handle_login(request).await;
+            }
+            Packet::UserCleanupRequest(request) => {
+                log::info!("got UserCleanupRequest");
+                self.handle_user_cleanup(request).await;
             }
             Packet::BenchUnreliableRequest(request) => {
                 log::info!("got BenchUnreliableRequest");
@@ -281,6 +455,21 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 }
             }
         };
+        // save user context
+        if let Some(context) = &self.user_context
+            && (context.init_len != context.context.len() || context.context.is_empty())
+        {
+            let context_str = serde_json::to_string(&context.context).unwrap_or_default();
+            let res = sqlx::query("INSERT INTO history (user_id, context) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET context = $2")
+                .bind(context.user_id)
+                .bind(context_str)
+                .execute(db::pool())
+                .await;
+            if let Err(err) = res {
+                log::error!("error saving user context {err}");
+            }
+        }
+
         let wait_timeout = Duration::from_secs(10);
         self.close_notify.take().unwrap().send(wait).unwrap();
         let _ = self
@@ -290,5 +479,11 @@ impl<T: Tx, R: Rx> Session<T, R> {
             .timeout(wait_timeout)
             .await;
         log::info!("session shutdown");
+    }
+}
+
+async fn random_yield() {
+    if random_bool(0.5) {
+        tokio::task::yield_now().await;
     }
 }

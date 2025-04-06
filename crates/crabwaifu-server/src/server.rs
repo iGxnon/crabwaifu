@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 
 use crabml::gguf::{GGUFFile, GGUFFileLoader, GGUFMetadataValueType};
 use crabml_llama2::llama2::Llama2Runner;
-use crabml_llama2::model::{CpuLlamaModelLoader, LlamaConfig};
+use crabml_llama2::model::CpuLlamaModelLoader;
 use crabml_llama2::CpuLlamaModel;
 use crabwaifu_common::network::{
     spawn_flush_task, tcp_split, PinReader, PinWriter, TcpListenerStream,
@@ -16,9 +16,7 @@ use tokio::sync::watch;
 use crate::config::{self, CrabLlamaConfig, TCPConfig};
 use crate::session;
 
-fn setup_llama_model(
-    config: &config::CrabLlamaConfig,
-) -> anyhow::Result<(CpuLlamaModel<'static>, LlamaConfig)> {
+fn setup_llama_model(config: &config::CrabLlamaConfig) -> anyhow::Result<CpuLlamaModel<'static>> {
     let gl = GGUFFileLoader::new(&config.model, config.mlock)?;
     let gl: &'static GGUFFileLoader = Box::leak(Box::new(gl));
     let gf: &'static GGUFFile<'static> = Box::leak(Box::new(gl.open()?));
@@ -29,9 +27,8 @@ fn setup_llama_model(
         .with_temperature(config.temperature)
         .with_probability(config.probability)
         .load(gf)?;
-    let conf = model_cpu.conf.clone();
 
-    Ok((model_cpu, conf))
+    Ok(model_cpu)
 }
 
 fn dump_gguf_metadata(gf: &GGUFFile) {
@@ -86,9 +83,9 @@ pub async fn serve(
     incoming: impl Stream<Item = (impl PinReader, impl PinWriter)>,
     llama_config: CrabLlamaConfig,
 ) -> anyhow::Result<()> {
-    let (llama_model, conf) = setup_llama_model(&llama_config)?;
+    let llama_model = setup_llama_model(&llama_config)?;
 
-    let seq_len = cmp::max(conf.seq_len, llama_config.max_context_length);
+    let seq_len = cmp::max(llama_model.conf.seq_len, llama_config.max_context_length);
     let default_steps = llama_config.steps;
     let f16_kv_cache = llama_config.f16_kv_cache;
 

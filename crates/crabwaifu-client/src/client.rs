@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail};
 use crabwaifu_common::network::{spawn_flush_task, tcp_split, Rx, Tx};
 use crabwaifu_common::proto::chat::{self, Message};
-use crabwaifu_common::proto::{bench, Packet};
+use crabwaifu_common::proto::{bench, user, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use futures::Stream;
 use histogram::AtomicHistogram;
@@ -63,6 +63,59 @@ pub async fn raknet_connect_to(
 }
 
 impl<T: Tx, R: Rx> Client<T, R> {
+    pub async fn login(
+        &mut self,
+        username: String,
+        password: String,
+    ) -> anyhow::Result<Vec<Message>> {
+        self.tx
+            .send_pack(user::LoginRequest { username, password })
+            .await?;
+        self.flush_notify.notify_one();
+        let pack = self.rx.recv_pack().await.unwrap();
+        if let Packet::UserLoginResponse(resp) = pack {
+            if resp.success {
+                Ok(resp.context)
+            } else {
+                bail!(resp.message);
+            }
+        } else {
+            bail!("response interrupt");
+        }
+    }
+
+    pub async fn register(&mut self, username: String, password: String) -> anyhow::Result<()> {
+        self.tx
+            .send_pack(user::RegisterRequest { username, password })
+            .await?;
+        self.flush_notify.notify_one();
+        let pack = self.rx.recv_pack().await.unwrap();
+        if let Packet::UserRegisterResponse(resp) = pack {
+            if resp.success {
+                Ok(())
+            } else {
+                bail!(resp.message);
+            }
+        } else {
+            bail!("response interrupt");
+        }
+    }
+
+    pub async fn clear_session(&mut self) -> anyhow::Result<()> {
+        self.tx.send_pack(user::CleanupRequest {}).await?;
+        self.flush_notify.notify_one();
+        let pack = self.rx.recv_pack().await.unwrap();
+        if let Packet::UserCleanupResponse(resp) = pack {
+            if resp.success {
+                Ok(())
+            } else {
+                bail!(resp.message);
+            }
+        } else {
+            bail!("response interrupt");
+        }
+    }
+
     pub async fn oneshot(
         &mut self,
         messages: Vec<Message>,

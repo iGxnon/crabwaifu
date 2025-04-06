@@ -1,0 +1,27 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres
+    restart: always
+    # set shared memory limit when using docker-compose
+    shm_size: 128mb
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./etc/initdb:/docker-entrypoint-initdb.d
+    environment:
+      POSTGRES_PASSWORD: ${MY_SWEET_POSTGRES_PASS}
+      POSTGRES_USER: ${MY_SWEET_POSTGRES_USER}
+      POSTGRES_DB: ${MY_SWEET_POSTGRES_APP_DB}
+
+  pgadmin4:
+    image: dpage/pgadmin4
+    restart: always
+    ports:
+      - "5050:80"
+    volumes:
+      - ./etc/pgadmin/servers.json:/pgadmin4/servers.json
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${MY_SWEET_PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${MY_SWEET_PGADMIN_PASS}

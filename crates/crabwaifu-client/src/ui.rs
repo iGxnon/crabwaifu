@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crabwaifu_common::network::{Rx, Tx};
+use crabwaifu_common::proto::chat::{self, Message};
 use futures::Stream;
 use gtk::prelude::*;
 use gtk::{
@@ -27,7 +28,10 @@ pub async fn run_ui(client: &mut Client<impl Tx, impl Rx>) -> anyhow::Result<()>
     Ok(())
 }
 
-fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 'static {
+fn build_ui(
+    client: *mut Client<impl Tx, impl Rx>,
+    cached: Vec<Message>,
+) -> impl Fn(&Application) + 'static {
     move |app: &Application| {
         // Create a new window
         let window = ApplicationWindow::builder()
@@ -88,6 +92,15 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
         record_button.set_child(Some(&record_icon));
         record_button.style_context().add_class("circular"); // Add circular style class
 
+        // Create a Clear button with a broom icon
+        let clear_button = Button::builder().build();
+        let clear_icon = Image::from_icon_name("edit-clear-symbolic"); // Use a broom icon
+        clear_button.set_child(Some(&clear_icon));
+        clear_button.style_context().add_class("circular"); // Add circular style class
+
+        // Add the Clear button to the left of the Entry
+        input_box.prepend(&clear_button);
+
         // Add widgets to input_box
         input_box.append(&entry);
         input_box.append(&send_button);
@@ -102,6 +115,26 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
 
         // Get the buffer from the TextView
         let buffer = text_view.buffer();
+
+        for msg in &cached {
+            match msg.role {
+                chat::Role::User => {
+                    let tag = buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
+                    buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
+                    buffer.insert(&mut buffer.end_iter(), &msg.content);
+                    buffer.insert(&mut buffer.end_iter(), "\n");
+                }
+                chat::Role::Assistant => {
+                    let tag = buffer
+                        .create_tag(None, &[("foreground", &"green")])
+                        .unwrap();
+                    buffer.insert_with_tags(&mut buffer.end_iter(), "Assistant: ", &[&tag]);
+                    buffer.insert(&mut buffer.end_iter(), &msg.content);
+                    buffer.insert(&mut buffer.end_iter(), "\n");
+                }
+                _ => {}
+            }
+        }
 
         // Connect the "clicked" signal of the send button
         send_button.connect_clicked({
@@ -137,6 +170,40 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
             let send_button = send_button.clone();
             move |_| {
                 send_button.emit_clicked();
+            }
+        });
+
+        // Connect the Clear button to clear the input field
+        clear_button.connect_clicked({
+            let buffer = buffer.clone();
+            let entry = entry.clone();
+            let window = window.clone();
+            move |_| {
+                let ctx = glib::MainContext::default();
+                ctx.spawn_local({
+                    let buffer = buffer.clone();
+                    let entry = entry.clone();
+                    let window = window.clone();
+                    let client = unsafe { &mut *client };
+                    async move {
+                        if let Err(err) = client.clear_session().await {
+                            let dialog = gtk::MessageDialog::builder()
+                                .transient_for(&window)
+                                .modal(true)
+                                .message_type(gtk::MessageType::Warning)
+                                .buttons(gtk::ButtonsType::Ok)
+                                .text("Warning")
+                                .secondary_text(format!("Failed to clear session: {}", err))
+                                .build();
+                            dialog.run_async(|obj, _| {
+                                obj.close();
+                            });
+                        } else {
+                            entry.set_text("");
+                            buffer.set_text("");
+                        }
+                    }
+                });
             }
         });
 
@@ -200,7 +267,7 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
     }
 }
 
-pub fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 'static {
+fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 'static {
     move |app: &Application| {
         // Create a new window for login
         let login_window = ApplicationWindow::builder()
@@ -302,10 +369,34 @@ pub fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Applica
                     });
                 } else {
                     println!("Logging in with username: {}", username);
-                    // Here you can add logic to verify the username and password
-
-                    login_window.close();
-                    build_ui(client)(&app);
+                    let ctx = glib::MainContext::default();
+                    ctx.spawn_local({
+                        let login_window = login_window.clone();
+                        let app = app.clone();
+                        let c = unsafe { &mut *client };
+                        async move {
+                            let reply = c.login(username, password).await;
+                            match reply {
+                                Ok(msg) => {
+                                    login_window.close();
+                                    build_ui(client, msg)(&app);
+                                }
+                                Err(err) => {
+                                    let dialog = gtk::MessageDialog::builder()
+                                        .transient_for(&login_window)
+                                        .modal(true)
+                                        .message_type(gtk::MessageType::Warning)
+                                        .buttons(gtk::ButtonsType::Ok)
+                                        .text("Warning")
+                                        .secondary_text(format!("Login failed: {}", err))
+                                        .build();
+                                    dialog.run_async(|obj, _| {
+                                        obj.close();
+                                    });
+                                }
+                            }
+                        }
+                    });
                 }
             }
         });
@@ -313,7 +404,6 @@ pub fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Applica
         // Connect the register button to handle registration logic
         register_button.connect_clicked({
             let login_window = login_window.clone();
-            let app = app.clone();
             let username_entry = username_entry.clone();
             let password_entry = password_entry.clone();
             move |_| {
@@ -334,11 +424,43 @@ pub fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Applica
                         obj.close();
                     });
                 } else {
-                    println!("Register with username: {}", username);
-                    // Here you can add logic to verify the username and password
-
-                    login_window.close(); // Close the login window after successful login
-                    build_ui(client)(&app);
+                    // Here you can add logic to handle registration
+                    let ctx = glib::MainContext::default();
+                    ctx.spawn_local({
+                        let login_window = login_window.clone();
+                        let c = unsafe { &mut *client };
+                        async move {
+                            let reply = c.register(username, password).await;
+                            match reply {
+                                Ok(_) => {
+                                    let dialog = gtk::MessageDialog::builder()
+                                        .transient_for(&login_window)
+                                        .modal(true)
+                                        .message_type(gtk::MessageType::Info)
+                                        .buttons(gtk::ButtonsType::Ok)
+                                        .text("Info")
+                                        .secondary_text("Registration successful")
+                                        .build();
+                                    dialog.run_async(|obj, _| {
+                                        obj.close();
+                                    });
+                                }
+                                Err(err) => {
+                                    let dialog = gtk::MessageDialog::builder()
+                                        .transient_for(&login_window)
+                                        .modal(true)
+                                        .message_type(gtk::MessageType::Warning)
+                                        .buttons(gtk::ButtonsType::Ok)
+                                        .text("Warning")
+                                        .secondary_text(format!("Registration failed: {}", err))
+                                        .build();
+                                    dialog.run_async(|obj, _| {
+                                        obj.close();
+                                    });
+                                }
+                            }
+                        }
+                    });
                 }
             }
         });
@@ -349,7 +471,7 @@ pub fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Applica
             let app = app.clone();
             move |_| {
                 login_window.close(); // Close the login window after successful login
-                build_ui(client)(&app);
+                build_ui(client, Vec::new())(&app);
             }
         });
 

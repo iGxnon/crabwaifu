@@ -10,6 +10,12 @@ pub enum Packet {
     ChatResponse(chat::Response),
     ChatStreamRequest(chat::StreamRequest),
     ChatStreamResponse(chat::StreamResponse),
+    UserLoginRequest(user::LoginRequest),
+    UserLoginResponse(user::LoginResponse),
+    UserRegisterRequest(user::RegisterRequest),
+    UserRegisterResponse(user::RegisterResponse),
+    UserCleanupRequest(user::CleanupRequest),
+    UserCleanupResponse(user::CleanupResponse),
 
     BenchUnreliableRequest(bench::UnreliableRequest),
     BenchUnreliableResponse(bench::UnreliableResponse),
@@ -27,6 +33,12 @@ pub enum PacketID {
     ChatResponse = 2,
     ChatStreamRequest = 3,
     ChatStreamResponse = 4,
+    UserLoginRequest = 5,
+    UserLoginResponse = 6,
+    UserRegisterRequest = 7,
+    UserRegisterResponse = 8,
+    UserCleanupRequest = 9,
+    UserCleanupResponse = 10,
 
     BenchUnreliableRequest = 200,
     BenchUnreliableResponse = 201,
@@ -43,6 +55,12 @@ impl PacketID {
             2 => PacketID::ChatResponse,
             3 => PacketID::ChatStreamRequest,
             4 => PacketID::ChatStreamResponse,
+            5 => PacketID::UserLoginRequest,
+            6 => PacketID::UserLoginResponse,
+            7 => PacketID::UserRegisterRequest,
+            8 => PacketID::UserRegisterResponse,
+            9 => PacketID::UserCleanupRequest,
+            10 => PacketID::UserCleanupResponse,
 
             200 => PacketID::BenchUnreliableRequest,
             201 => PacketID::BenchUnreliableResponse,
@@ -144,6 +162,87 @@ pub mod chat {
         const ORDER_CHANNEL: u8 = 0;
         const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::ReliableOrdered;
+    }
+}
+
+pub mod user {
+    use super::chat::Message;
+    use super::*;
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct LoginRequest {
+        pub username: String,
+        pub password: String,
+    }
+
+    impl Pack for LoginRequest {
+        const ID: PacketID = PacketID::UserLoginRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct LoginResponse {
+        pub success: bool,
+        pub message: String,
+        pub context: Vec<Message>,
+    }
+
+    impl Pack for LoginResponse {
+        const ID: PacketID = PacketID::UserLoginResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct RegisterRequest {
+        pub username: String,
+        pub password: String,
+    }
+
+    impl Pack for RegisterRequest {
+        const ID: PacketID = PacketID::UserRegisterRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct RegisterResponse {
+        pub success: bool,
+        pub message: String,
+    }
+
+    impl Pack for RegisterResponse {
+        const ID: PacketID = PacketID::UserRegisterResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct CleanupRequest;
+
+    impl Pack for CleanupRequest {
+        const ID: PacketID = PacketID::UserCleanupRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct CleanupResponse {
+        pub success: bool,
+        pub message: String,
+    }
+
+    impl Pack for CleanupResponse {
+        const ID: PacketID = PacketID::UserCleanupResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
     }
 }
 
