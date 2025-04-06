@@ -6,7 +6,7 @@ use crabml::cpu::CpuTensor;
 use crabml_llama2::llama2::Llama2Runner;
 use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
-use crabwaifu_common::proto::{bench, chat, user, Packet};
+use crabwaifu_common::proto::{bench, chat, realtime, user, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use rand::random_bool;
 use tokio::sync::{oneshot, watch, Notify};
@@ -365,6 +365,10 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     #[inline]
+    async fn handle_realtime_audio(&mut self, request: realtime::RealtimeAudioChunk) {
+    }
+
+    #[inline]
     async fn handle_user_cleanup(&mut self, _: user::CleanupRequest) {
         let res: anyhow::Result<()> = try {
             let Some(context) = &self.user_context else {
@@ -428,6 +432,9 @@ impl<T: Tx, R: Rx> Session<T, R> {
             Packet::BenchOrderedRequest(request) => {
                 log::info!("got BenchOrderedRequest");
                 self.handle_bench_ordered(request).await;
+            }
+            Packet::RealtimeAudioChunk(request) => {
+                self.handle_realtime_audio(request).await;
             }
             _ => {
                 log::warn!("got unexpected packet on server {pack:?}");

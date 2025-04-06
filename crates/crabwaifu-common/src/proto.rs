@@ -16,6 +16,7 @@ pub enum Packet {
     UserRegisterResponse(user::RegisterResponse),
     UserCleanupRequest(user::CleanupRequest),
     UserCleanupResponse(user::CleanupResponse),
+    RealtimeAudioChunk(realtime::RealtimeAudioChunk),
 
     BenchUnreliableRequest(bench::UnreliableRequest),
     BenchUnreliableResponse(bench::UnreliableResponse),
@@ -39,6 +40,7 @@ pub enum PacketID {
     UserRegisterResponse = 8,
     UserCleanupRequest = 9,
     UserCleanupResponse = 10,
+    RealtimeAudioChunk = 11,
 
     BenchUnreliableRequest = 200,
     BenchUnreliableResponse = 201,
@@ -61,6 +63,7 @@ impl PacketID {
             8 => PacketID::UserRegisterResponse,
             9 => PacketID::UserCleanupRequest,
             10 => PacketID::UserCleanupResponse,
+            11 => PacketID::RealtimeAudioChunk,
 
             200 => PacketID::BenchUnreliableRequest,
             201 => PacketID::BenchUnreliableResponse,
@@ -247,7 +250,29 @@ pub mod user {
 }
 
 /// Realtime prototypes
-pub mod realtime {}
+pub mod realtime {
+    use super::*;
+
+    /// Message sent from client to server containing audio data chunk.
+    /// N RealtimeAudioChunk : 1 chat::Response (user prompt) + N chat::StreamResponse
+    /// (assistant response)
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct RealtimeAudioChunk {
+        /// Raw audio data bytes.
+        pub data: Vec<f32>,
+        /// Flag indicating if this is the last chunk for the stream.
+        pub is_final: bool,
+    }
+
+    impl Pack for RealtimeAudioChunk {
+        const ID: PacketID = PacketID::RealtimeAudioChunk;
+        // audio channel
+        const ORDER_CHANNEL: u8 = 1;
+        const PRIORITY: Priority = Priority::Medium;
+        // sequenced required here to prevent old audio chunk proceeding
+        const RELIABILITY: Reliability = Reliability::UnreliableSequenced;
+    }
+}
 
 /// Benchmark prototypes
 /// TODO: sequenced connection

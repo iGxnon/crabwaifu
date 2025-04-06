@@ -67,7 +67,7 @@ async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Resul
             receive,
             batch_size: parts,
             brief,
-        } => bench::run(client, suite, receive, parts, args.mtu, brief).await,
+        } => bench::run(client, suite, receive, parts, brief).await,
     }
 }
 
@@ -81,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
                 raknet_rs::client::Config::default()
                     .mtu(args.mtu)
                     .max_channels(255),
+                args.mtu,
             )
             .await?;
             if let Err(err) = run(&mut client, args).await {
@@ -89,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
             client.finish().await;
         }
         Network::Tcp => {
-            let mut client = tcp_connect_to(args.endpoint).await?;
+            let mut client = tcp_connect_to(args.endpoint, args.mtu).await?;
             if let Err(err) = run(&mut client, args).await {
                 eprintln!("error: {err}");
             }

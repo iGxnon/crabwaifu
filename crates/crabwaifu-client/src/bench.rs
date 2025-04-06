@@ -29,17 +29,12 @@ pub async fn run(
     suite: Suite,
     received: usize,
     batch_size: usize,
-    mtu: u16,
     brief: bool,
 ) -> anyhow::Result<()> {
     let histogram = AtomicHistogram::new(7, 64)?;
     println!("=== BENCHMARK START ===");
     let output = match suite {
-        Suite::Unreliable => {
-            client
-                .bench_unreliable(received, mtu as usize, &histogram)
-                .await
-        }
+        Suite::Unreliable => client.bench_unreliable(received, &histogram).await,
         Suite::Commutative => {
             client
                 .bench_commutative(received, batch_size, &histogram)

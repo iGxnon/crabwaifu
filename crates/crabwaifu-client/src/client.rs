@@ -22,9 +22,13 @@ pub struct Client<T, R> {
     close_notify: Option<oneshot::Sender<bool>>,
     flush_task: Option<JoinHandle<()>>,
     is_raknet: bool,
+    mtu: u16,
 }
 
-pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, impl Rx>> {
+pub async fn tcp_connect_to(
+    addr: SocketAddr,
+    mtu: u16,
+) -> anyhow::Result<Client<impl Tx, impl Rx>> {
     let socket = TcpSocket::new_v4()?;
     let stream = socket.connect(addr).await?;
     let (rx, writer) = tcp_split(stream);
@@ -37,6 +41,7 @@ pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, 
         close_notify: Some(close_notify),
         flush_task: Some(flush_task),
         is_raknet: false,
+        mtu,
     };
     Ok(client)
 }
@@ -44,6 +49,7 @@ pub async fn tcp_connect_to(addr: SocketAddr) -> anyhow::Result<Client<impl Tx, 
 pub async fn raknet_connect_to(
     addr: SocketAddr,
     config: client::Config,
+    mtu: u16,
 ) -> anyhow::Result<Client<impl Tx, impl Rx>> {
     let (rx, writer) = net::UdpSocket::bind("0.0.0.0:0")
         .await?
@@ -58,6 +64,7 @@ pub async fn raknet_connect_to(
         close_notify: Some(close_notify),
         flush_task: Some(flush_task),
         is_raknet: true,
+        mtu,
     };
     Ok(client)
 }
@@ -164,10 +171,11 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
+    pub async fn send_audio(&mut self, chunk: Vec<f32>) {}
+
     pub async fn bench_unreliable(
         &mut self,
         received: usize,
-        mtu: usize,
         delay_histogram: &AtomicHistogram,
     ) -> anyhow::Result<String> {
         let start_at = Instant::now();
@@ -176,7 +184,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         self.tx
             .send_pack(bench::UnreliableRequest {
                 data_len: received,
-                mtu,
+                mtu: self.mtu as usize,
             })
             .await?;
         let bar = ProgressBar::new(received as u64);

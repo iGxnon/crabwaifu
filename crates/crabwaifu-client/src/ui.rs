@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crabwaifu_common::network::{Rx, Tx};
@@ -207,32 +207,33 @@ fn build_ui(
             }
         });
 
-        // Create a state to track recording status
-        let is_pausing = Rc::new(std::cell::RefCell::new(true));
-        // Create a shared state for the audio stream
-        let audio_stream = Rc::new(Mutex::new(None));
-
         // Connect the Record button to handle recording logic
         record_button.connect_clicked({
-            let is_pausing = is_pausing.clone();
+            let is_pausing = Rc::new(std::cell::RefCell::new(true));
+            let audio_stream = Rc::new(Mutex::new(None));
+            let audio_data = Arc::new(Mutex::new(None::<Vec<f32>>));
             let record_icon = record_icon.clone();
-            let audio_stream = audio_stream.clone();
+            let host = cpal::default_host();
+            let device = host
+                .default_input_device()
+                .expect("No input device available");
+            let config = device.default_input_config().unwrap();
             move |_| {
                 let mut pausing = is_pausing.borrow_mut();
                 if *pausing {
                     // Start recording
-                    let host = cpal::default_host();
-                    let device = host
-                        .default_input_device()
-                        .expect("No input device available");
-                    let config = device.default_input_config().unwrap();
-
-                    let client = unsafe { &mut *client };
+                    *audio_data.lock().unwrap() = Some(vec![]);
                     let stream = match config.sample_format() {
                         cpal::SampleFormat::F32 => device.build_input_stream(
-                            &config.into(),
-                            move |data: &[f32], _| {
-                                // TODO: transfer data to server
+                            &config.clone().into(),
+                            {
+                                let audio_data = audio_data.clone();
+                                move |data: &[f32], _| {
+                                    let mut audio = audio_data.lock().unwrap();
+                                    if let Some(v) = audio.as_mut() {
+                                        v.extend_from_slice(data);
+                                    }
+                                }
                             },
                             |err| {
                                 eprintln!("Error during recording: {:?}", err);
@@ -242,19 +243,38 @@ fn build_ui(
                         _ => panic!("Unsupported sample format"),
                     }
                     .unwrap();
-
                     stream.play().unwrap();
                     *audio_stream.lock().unwrap() = Some(stream);
                     println!("Recording started");
                     record_icon.set_icon_name(Some("media-playback-stop-symbolic"));
                 } else {
-                    // Stop recording
-
+                    audio_stream
+                        .lock()
+                        .unwrap()
+                        .take()
+                        .unwrap()
+                        .pause()
+                        .unwrap();
+                    let data = audio_data.lock().unwrap().take().unwrap();
                     let client = unsafe { &mut *client };
-                    if let Some(stream) = audio_stream.lock().unwrap().take() {
-                        stream.pause().unwrap();
-                        // TODO: send stop record to server, wait response
-                    }
+                    let ctx = glib::MainContext::default();
+                    ctx.spawn(async move {
+                        client.send_audio(data).await;
+                    });
+
+                    // let spec = hound::WavSpec {
+                    //     channels: config.channels() as u16,
+                    //     sample_rate: config.sample_rate().0,
+                    //     bits_per_sample: 16,
+                    //     sample_format: hound::SampleFormat::Int,
+                    // };
+                    // let mut writer = hound::WavWriter::create("output.wav", spec).unwrap();
+                    // for sample in data {
+                    //     let amplitude = (sample * i16::MAX as f32) as i16;
+                    //     writer.write_sample(amplitude).unwrap();
+                    // }
+                    // writer.finalize().unwrap();
+
                     println!("Recording stopped");
                     record_icon.set_icon_name(Some("media-record-symbolic"));
                 }
