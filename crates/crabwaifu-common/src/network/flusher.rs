@@ -61,7 +61,7 @@ struct Flusher<W: PinWriter> {
 
 impl<W: PinWriter> Flusher<W> {
     // The maximum delay accepted by peer or the minimum delay of processing a piece of data
-    const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+    const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
     const DEFAULT_FLUSH_DELAY: Duration = Duration::from_millis(1);
 
     fn new(writer: W) -> (Self, Arc<Notify>, UnboundedSender<Message>) {

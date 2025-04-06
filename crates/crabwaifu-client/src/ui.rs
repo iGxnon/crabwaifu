@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::{self, Message};
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use gtk::prelude::*;
 use gtk::{
     glib, Application, ApplicationWindow, Box as GtkBox, Button, Entry, Image, PasswordEntry,
@@ -270,7 +270,9 @@ fn build_ui(
                     ctx.spawn_local(async move {
                         let res = client.send_mono_audio(data, sample_rate).await;
                         match res {
-                            Ok((prompt, reply)) => {
+                            Ok(reply) => {
+                                tokio::pin!(reply);
+                                let prompt = reply.next().await.unwrap().unwrap();
                                 let tag =
                                     buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
                                 buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);

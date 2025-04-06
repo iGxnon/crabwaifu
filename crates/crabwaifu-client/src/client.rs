@@ -175,11 +175,12 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
+    // first message is user prompt
     pub async fn send_mono_audio(
         &mut self,
         chunk_raw: Vec<f32>,
         sample_rate: usize,
-    ) -> anyhow::Result<(String, impl Stream<Item = anyhow::Result<String>> + '_)> {
+    ) -> anyhow::Result<impl Stream<Item = anyhow::Result<String>> + '_> {
         // Resample the audio buffer to 16000Hz
         let chunk_size = sample_rate / 100;
         let mut resampler = FftFixedInOut::<f32>::new(sample_rate, 16000, chunk_size, 1)?;
@@ -209,22 +210,17 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
         debug_assert!(chunks.is_empty(), "data remains");
 
-        let pack = self.rx.recv_pack().await?;
-        let prompt;
-        if let Packet::ChatResponse(resp) = pack {
-            prompt = resp.message.content;
-        } else {
-            bail!("response interrupt")
-        }
-
         let stream = {
             #[futures_async_stream::stream]
             async move {
                 loop {
                     let res = self.rx.recv_pack().await;
                     match res {
-                        Ok(pack) => {
-                            if let Packet::ChatStreamResponse(resp) = pack {
+                        Ok(pack) => match pack {
+                            Packet::ChatResponse(resp) => {
+                                yield Ok(resp.message.content);
+                            }
+                            Packet::ChatStreamResponse(resp) => {
                                 if resp.eos {
                                     if !resp.partial.is_empty() {
                                         println!("response error: {}", resp.partial);
@@ -232,17 +228,18 @@ impl<T: Tx, R: Rx> Client<T, R> {
                                     return;
                                 }
                                 yield Ok(resp.partial);
-                            } else {
+                            }
+                            _ => {
                                 yield Err(anyhow!("response interrupt"));
                             }
-                        }
+                        },
                         Err(err) => yield Err(err.into()),
                     }
                 }
             }
         };
 
-        Ok((prompt, stream))
+        Ok(stream)
     }
 
     pub async fn bench_unreliable(

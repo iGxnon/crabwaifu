@@ -206,6 +206,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 self.tx
                     .send_pack(bench::UnreliableResponse { data_partial })
                     .await?;
+                random_yield().await;
             }
             debug_assert!(data.is_empty(), "data remains");
         };
@@ -237,6 +238,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 self.tx
                     .send_pack(bench::CommutativeResponse { data_partial })
                     .await?;
+                random_yield().await;
             }
             debug_assert!(data.is_empty(), "data remains");
         };
@@ -260,6 +262,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                         index,
                     })
                     .await?;
+                random_yield().await;
             }
             debug_assert!(data.is_empty(), "data remains");
         };
@@ -409,6 +412,8 @@ impl<T: Tx, R: Rx> Session<T, R> {
                     },
                 })
                 .await?;
+            self.flush_notify.notify_one();
+            tokio::task::yield_now().await;
             self.handle_chat_stream(chat::StreamRequest { prompt: content })
                 .await;
         };
