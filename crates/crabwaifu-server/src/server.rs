@@ -12,8 +12,9 @@ use futures::{Stream, StreamExt};
 use raknet_rs::server::MakeIncoming;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::watch;
+use whisper_rs::{WhisperContext, WhisperContextParameters};
 
-use crate::config::{self, CrabLlamaConfig, TCPConfig};
+use crate::config::{self, Config, TCPConfig};
 use crate::session;
 
 fn setup_llama_model(config: &config::CrabLlamaConfig) -> anyhow::Result<CpuLlamaModel<'static>> {
@@ -29,6 +30,11 @@ fn setup_llama_model(config: &config::CrabLlamaConfig) -> anyhow::Result<CpuLlam
         .load(gf)?;
 
     Ok(model_cpu)
+}
+
+fn setup_whisper_model(config: &config::WhisperConfig) -> anyhow::Result<WhisperContext> {
+    let ctx = WhisperContext::new_with_params(&config.model, WhisperContextParameters::default())?;
+    Ok(ctx)
 }
 
 fn dump_gguf_metadata(gf: &GGUFFile) {
@@ -81,13 +87,15 @@ pub async fn make_raknet_incoming(
 
 pub async fn serve(
     incoming: impl Stream<Item = (impl PinReader, impl PinWriter)>,
-    llama_config: CrabLlamaConfig,
+    config: Config,
 ) -> anyhow::Result<()> {
-    let llama_model = setup_llama_model(&llama_config)?;
+    let llama_model = setup_llama_model(&config.llama)?;
+    let whisper_model = setup_whisper_model(&config.whisper)?;
 
-    let seq_len = cmp::max(llama_model.conf.seq_len, llama_config.max_context_length);
-    let default_steps = llama_config.steps;
-    let f16_kv_cache = llama_config.f16_kv_cache;
+    let seq_len = cmp::max(llama_model.conf.seq_len, config.llama.max_context_length);
+    let default_steps = config.llama.steps;
+    let f16_kv_cache = config.llama.f16_kv_cache;
+    let language = config.whisper.language;
 
     let (shutdown, watcher) = watch::channel("running");
     let ctrl_c = tokio::signal::ctrl_c();
@@ -98,15 +106,20 @@ pub async fn serve(
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
-                let runner = Llama2Runner::new(&llama_model, seq_len, f16_kv_cache)
+                let llama_runner = Llama2Runner::new(&llama_model, seq_len, f16_kv_cache)
                     .expect("llama runner cannot be initialized");
+                let whisper_runner = whisper_model.create_state()
+                    .expect("whisper runner cannot be initialized");
+
                 let session = session::Session::new(
                     tx,
                     rx,
                     flush_notify,
                     close_notify,
-                    runner,
+                    llama_runner,
                     default_steps,
+                    whisper_runner,
+                    language.clone(),
                     task,
                 );
                 tokio::task::spawn(session.run(watcher.clone()));

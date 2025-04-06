@@ -56,6 +56,33 @@ pub trait Tx: Send + Sync + 'static {
             .await
         }
     }
+
+    fn send_pack_with_reliability<P: Pack>(
+        &self,
+        pack: P,
+        reliability: Reliability,
+    ) -> impl Future<Output = io::Result<()>> + Send + Sync {
+        debug_assert!(
+            !matches!(P::ID, PacketID::InvalidPack),
+            "please send a valid packet"
+        );
+
+        async move {
+            let cap = bincode::serialized_size(&pack).unwrap_or_default() as usize + 2;
+            let mut writer = BytesMut::with_capacity(cap).writer();
+            writer.write_all(&[0xfe, P::ID as u8])?;
+            bincode::serialize_into(&mut writer, &pack)
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
+            let buf = writer.into_inner();
+            self.send_raw(
+                Message::new(buf.freeze())
+                    .reliability(reliability)
+                    .order_channel(P::ORDER_CHANNEL)
+                    .priority(P::PRIORITY),
+            )
+            .await
+        }
+    }
 }
 
 /// Receiving packets happens only in one place, so this is an exclusive reference (mutable

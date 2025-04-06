@@ -1,19 +1,23 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{cmp, mem};
 
 use anyhow::{anyhow, bail};
 use crabwaifu_common::network::{spawn_flush_task, tcp_split, Rx, Tx};
 use crabwaifu_common::proto::chat::{self, Message};
-use crabwaifu_common::proto::{bench, user, Packet};
+use crabwaifu_common::proto::{bench, realtime, user, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
 use futures::Stream;
 use histogram::AtomicHistogram;
 use indicatif::ProgressBar;
 use raknet_rs::client::{self, ConnectTo};
+use rubato::{FftFixedInOut, Resampler};
 use tokio::net::{self, TcpSocket};
 use tokio::sync::{oneshot, Notify};
 use tokio::task::JoinHandle;
+
+const CONSERVATIVE_HEAD_SIZE: usize = 17;
 
 pub struct Client<T, R> {
     tx: T,
@@ -171,7 +175,75 @@ impl<T: Tx, R: Rx> Client<T, R> {
         Ok(stream)
     }
 
-    pub async fn send_audio(&mut self, chunk: Vec<f32>) {}
+    pub async fn send_mono_audio(
+        &mut self,
+        chunk_raw: Vec<f32>,
+        sample_rate: usize,
+    ) -> anyhow::Result<(String, impl Stream<Item = anyhow::Result<String>> + '_)> {
+        // Resample the audio buffer to 16000Hz
+        let chunk_size = sample_rate / 100;
+        let mut resampler = FftFixedInOut::<f32>::new(sample_rate, 16000, chunk_size, 1)?;
+        let mut chunks = Vec::new();
+        for chunk in chunk_raw.chunks(chunk_size) {
+            // Process in smaller chunks to avoid data loss
+            let resampled_chunk = resampler.process(&[chunk], None)?;
+            chunks.extend(&resampled_chunk[0]);
+        }
+
+        let per_chunk = (self.mtu as usize - CONSERVATIVE_HEAD_SIZE) / mem::size_of::<i16>();
+        while !chunks.is_empty() {
+            let mut data = chunks.split_off(cmp::min(chunks.len(), per_chunk));
+            mem::swap(&mut data, &mut chunks);
+            if chunks.is_empty() {
+                self.tx
+                    .send_pack_with_reliability(
+                        realtime::RealtimeAudioChunk { data, eos: true },
+                        raknet_rs::Reliability::Reliable, // TODO: use reliable sequenced
+                    )
+                    .await?;
+            } else {
+                self.tx
+                    .send_pack(realtime::RealtimeAudioChunk { data, eos: false })
+                    .await?;
+            }
+        }
+        debug_assert!(chunks.is_empty(), "data remains");
+
+        let pack = self.rx.recv_pack().await?;
+        let prompt;
+        if let Packet::ChatResponse(resp) = pack {
+            prompt = resp.message.content;
+        } else {
+            bail!("response interrupt")
+        }
+
+        let stream = {
+            #[futures_async_stream::stream]
+            async move {
+                loop {
+                    let res = self.rx.recv_pack().await;
+                    match res {
+                        Ok(pack) => {
+                            if let Packet::ChatStreamResponse(resp) = pack {
+                                if resp.eos {
+                                    if !resp.partial.is_empty() {
+                                        println!("response error: {}", resp.partial);
+                                    }
+                                    return;
+                                }
+                                yield Ok(resp.partial);
+                            } else {
+                                yield Err(anyhow!("response interrupt"));
+                            }
+                        }
+                        Err(err) => yield Err(err.into()),
+                    }
+                }
+            }
+        };
+
+        Ok((prompt, stream))
+    }
 
     pub async fn bench_unreliable(
         &mut self,

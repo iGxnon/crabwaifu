@@ -108,24 +108,12 @@ pub mod chat {
         pub message: Message,
     }
 
-    impl Request {
-        pub fn validate(&self) -> bool {
-            let system_prompt_count = self
-                .messages
-                .iter()
-                .filter(|msg| matches!(msg.role, Role::System))
-                .count();
-            let steps = self.steps.unwrap_or_default();
-            !self.messages.is_empty() && system_prompt_count <= 1 && steps > 0
-        }
-    }
-
     // chat::Request should be reliable (may not be ordered)
     impl Pack for Request {
         const ID: PacketID = PacketID::ChatRequest;
         const ORDER_CHANNEL: u8 = 0;
         const PRIORITY: Priority = Priority::Medium;
-        const RELIABILITY: Reliability = Reliability::Reliable;
+        const RELIABILITY: Reliability = Reliability::ReliableOrdered;
     }
 
     // chat::Response is as same as chat::Request
@@ -133,7 +121,7 @@ pub mod chat {
         const ID: PacketID = PacketID::ChatResponse;
         const ORDER_CHANNEL: u8 = 0;
         const PRIORITY: Priority = Priority::Medium;
-        const RELIABILITY: Reliability = Reliability::Reliable;
+        const RELIABILITY: Reliability = Reliability::ReliableOrdered;
     }
 
     /// Stateful stream request
@@ -253,15 +241,14 @@ pub mod user {
 pub mod realtime {
     use super::*;
 
-    /// Message sent from client to server containing audio data chunk.
     /// N RealtimeAudioChunk : 1 chat::Response (user prompt) + N chat::StreamResponse
     /// (assistant response)
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct RealtimeAudioChunk {
-        /// Raw audio data bytes.
+        /// Raw mono audio data bytes.
         pub data: Vec<f32>,
         /// Flag indicating if this is the last chunk for the stream.
-        pub is_final: bool,
+        pub eos: bool,
     }
 
     impl Pack for RealtimeAudioChunk {
@@ -270,7 +257,7 @@ pub mod realtime {
         const ORDER_CHANNEL: u8 = 1;
         const PRIORITY: Priority = Priority::Medium;
         // sequenced required here to prevent old audio chunk proceeding
-        const RELIABILITY: Reliability = Reliability::UnreliableSequenced;
+        const RELIABILITY: Reliability = Reliability::Unreliable; // TODO: use unreliable sequenced
     }
 }
 

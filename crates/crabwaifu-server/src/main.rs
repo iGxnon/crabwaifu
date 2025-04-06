@@ -25,24 +25,24 @@ async fn main() -> anyhow::Result<()> {
     match config.network {
         Network::Raknet => {
             println!("server is listening on raknet://{}", config.listen_addr);
-            let incoming = make_raknet_incoming(config.listen_addr, config.raknet).await?;
-            serve(incoming, config.llama).await
+            let incoming = make_raknet_incoming(config.listen_addr, config.raknet.clone()).await?;
+            serve(incoming, config).await
         }
         Network::TCP => {
             println!("server is listening on tcp://{}", config.listen_addr);
-            let incoming = make_tcp_incoming(config.listen_addr, config.tcp).await?;
-            serve(incoming, config.llama).await
+            let incoming = make_tcp_incoming(config.listen_addr, config.tcp.clone()).await?;
+            serve(incoming, config).await
         }
         Network::Both => {
-            println!("server is listening on {}", config.listen_addr);
-            let llama_config = config.llama.clone();
+            let c1 = config.clone();
             let raknet = async move {
-                let incoming = make_raknet_incoming(config.listen_addr, config.raknet).await?;
-                serve(incoming, llama_config).await
+                let incoming = make_raknet_incoming(config.listen_addr, c1.raknet.clone()).await?;
+                serve(incoming, c1).await
             };
+            let c2 = config.clone();
             let tcp = async move {
-                let incoming = make_tcp_incoming(config.listen_addr, config.tcp).await?;
-                serve(incoming, config.llama).await
+                let incoming = make_tcp_incoming(config.listen_addr, c2.tcp.clone()).await?;
+                serve(incoming, c2).await
             };
             let rak_handle = tokio::spawn(raknet);
             let tcp_handle = tokio::spawn(tcp);

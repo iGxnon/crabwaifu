@@ -8,9 +8,9 @@ use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
 use crabwaifu_common::proto::{bench, chat, realtime, user, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
-use rand::random_bool;
 use tokio::sync::{oneshot, watch, Notify};
 use tokio::task::JoinHandle;
+use whisper_rs::{FullParams, SamplingStrategy, WhisperState};
 
 use crate::db;
 use crate::templ::{ChatReplyIterator, ChatTemplate};
@@ -30,9 +30,12 @@ pub struct Session<T, R> {
     llama_runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
     default_steps: usize,
+    whisper_runner: WhisperState,
+    language: String,
     close_notify: Option<oneshot::Sender<bool>>,
     flusher_task: Option<JoinHandle<()>>,
     user_context: Option<UserContext>,
+    audio_buffer: Vec<f32>,
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
@@ -44,6 +47,8 @@ impl<T: Tx, R: Rx> Session<T, R> {
         close_notify: oneshot::Sender<bool>,
         llama_runner: Llama2Runner<CpuTensor<'static>>,
         default_steps: usize,
+        whisper_runner: WhisperState,
+        language: String,
         flusher_task: JoinHandle<()>,
     ) -> Self {
         Self {
@@ -53,9 +58,12 @@ impl<T: Tx, R: Rx> Session<T, R> {
             chat_templ: ChatTemplate::heuristic_guess(&llama_runner),
             llama_runner,
             default_steps,
+            whisper_runner,
+            language,
             close_notify: Some(close_notify),
             flusher_task: Some(flusher_task),
             user_context: None,
+            audio_buffer: Vec::new(),
         }
     }
 
@@ -109,7 +117,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             self.tx
                 .send_pack(chat::Response {
                     message: Message {
-                        role: chat::Role::Assistant,
+                        role: chat::Role::User,
                         content,
                     },
                 })
@@ -366,6 +374,48 @@ impl<T: Tx, R: Rx> Session<T, R> {
 
     #[inline]
     async fn handle_realtime_audio(&mut self, request: realtime::RealtimeAudioChunk) {
+        self.audio_buffer.extend(request.data);
+        if !request.eos {
+            return;
+        };
+        log::info!("got RealtimeAudioChunk({})", self.audio_buffer.len());
+        let audio_buffer = self.audio_buffer.split_off(0);
+
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        // and set the language to translate to to english
+        params.set_language(Some(&self.language));
+        // we also explicitly disable anything that prints to stdout
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+
+        let res: anyhow::Result<()> = try {
+            self.whisper_runner.full(params, &audio_buffer[..])?;
+            let num_segments = self.whisper_runner.full_n_segments()?;
+            let mut content = String::new();
+            for i in 0..num_segments {
+                let segment = self.whisper_runner.full_get_segment_text(i)?;
+                let start_timestamp = self.whisper_runner.full_get_segment_t0(i)?;
+                let end_timestamp = self.whisper_runner.full_get_segment_t1(i)?;
+                log::info!("[{} - {}]: {}", start_timestamp, end_timestamp, segment);
+                content.push_str(&segment);
+            }
+            self.tx
+                .send_pack(chat::Response {
+                    message: Message {
+                        role: chat::Role::User,
+                        content: content.clone(),
+                    },
+                })
+                .await?;
+            self.handle_chat_stream(chat::StreamRequest { prompt: content })
+                .await;
+        };
+
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
     }
 
     #[inline]
@@ -421,6 +471,9 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 log::info!("got UserCleanupRequest");
                 self.handle_user_cleanup(request).await;
             }
+            Packet::RealtimeAudioChunk(request) => {
+                self.handle_realtime_audio(request).await;
+            }
             Packet::BenchUnreliableRequest(request) => {
                 log::info!("got BenchUnreliableRequest");
                 self.handle_bench_unreliable(request).await;
@@ -432,9 +485,6 @@ impl<T: Tx, R: Rx> Session<T, R> {
             Packet::BenchOrderedRequest(request) => {
                 log::info!("got BenchOrderedRequest");
                 self.handle_bench_ordered(request).await;
-            }
-            Packet::RealtimeAudioChunk(request) => {
-                self.handle_realtime_audio(request).await;
             }
             _ => {
                 log::warn!("got unexpected packet on server {pack:?}");
@@ -490,7 +540,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
 }
 
 async fn random_yield() {
-    if random_bool(0.5) {
+    if rand::random_bool(0.5) {
         tokio::task::yield_now().await;
     }
 }

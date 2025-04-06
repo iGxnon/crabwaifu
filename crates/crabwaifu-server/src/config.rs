@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub llama: CrabLlamaConfig,
+    pub whisper: WhisperConfig,
     pub listen_addr: SocketAddr,
 
     pub network: Network,
@@ -45,6 +46,12 @@ pub struct CrabLlamaConfig {
     pub max_context_length: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhisperConfig {
+    pub model: String,
+    pub language: String,
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -57,6 +64,10 @@ impl Default for Config {
                 mlock: false,
                 f16_kv_cache: true,
                 max_context_length: 4096,
+            },
+            whisper: WhisperConfig {
+                model: "./whisper-tiny-ggml-tiny.bin".to_string(),
+                language: "en".to_string(),
             },
             listen_addr: "0.0.0.0:8808".parse().unwrap(),
             network: Network::Raknet,

@@ -16,6 +16,10 @@ mlock = false                        # Enable mlock to lock the memory, it reduc
 f16_kv_cache = true                  # Enable f16 key-value cache, it reduces the memory usage
 max_context_length = 4096            # It should not be less than the value in the model parameter file.
 
+[whisper]
+model = "./whisper-tiny-ggml-tiny.bin"  # The path to the whisper model
+language = "en"                         # The language of the whisper model
+
 [raknet]
 sever_guid = 4170652262067404866
 advertisement = "Hi, I am server"

@@ -140,6 +140,7 @@ fn build_ui(
         send_button.connect_clicked({
             let entry = entry.clone();
             let buffer = buffer.clone();
+            let text_view = text_view.clone();
             move |_| {
                 let text = entry.text().to_string();
                 if !text.is_empty() {
@@ -211,28 +212,32 @@ fn build_ui(
         record_button.connect_clicked({
             let is_pausing = Rc::new(std::cell::RefCell::new(true));
             let audio_stream = Rc::new(Mutex::new(None));
-            let audio_data = Arc::new(Mutex::new(None::<Vec<f32>>));
+            let audio_mono = Arc::new(Mutex::new(None::<Vec<f32>>));
             let record_icon = record_icon.clone();
             let host = cpal::default_host();
             let device = host
                 .default_input_device()
                 .expect("No input device available");
             let config = device.default_input_config().unwrap();
+            let window = window.clone();
+            let text_view = text_view.clone();
+            let buffer = buffer.clone();
             move |_| {
                 let mut pausing = is_pausing.borrow_mut();
                 if *pausing {
                     // Start recording
-                    *audio_data.lock().unwrap() = Some(vec![]);
+                    *audio_mono.lock().unwrap() = Some(vec![]);
+                    let channels = config.channels();
                     let stream = match config.sample_format() {
                         cpal::SampleFormat::F32 => device.build_input_stream(
                             &config.clone().into(),
                             {
-                                let audio_data = audio_data.clone();
+                                let audio = audio_mono.clone();
                                 move |data: &[f32], _| {
-                                    let mut audio = audio_data.lock().unwrap();
-                                    if let Some(v) = audio.as_mut() {
-                                        v.extend_from_slice(data);
-                                    }
+                                    audio.lock().unwrap().as_mut().unwrap().extend(
+                                        data.chunks_exact(channels as usize)
+                                            .map(|x| x.iter().sum::<f32>() / channels as f32),
+                                    );
                                 }
                             },
                             |err| {
@@ -255,25 +260,40 @@ fn build_ui(
                         .unwrap()
                         .pause()
                         .unwrap();
-                    let data = audio_data.lock().unwrap().take().unwrap();
+                    let data = audio_mono.lock().unwrap().take().unwrap();
                     let client = unsafe { &mut *client };
                     let ctx = glib::MainContext::default();
-                    ctx.spawn(async move {
-                        client.send_audio(data).await;
+                    let sample_rate = config.sample_rate().0 as usize;
+                    let window = window.clone();
+                    let text_view = text_view.clone();
+                    let buffer = buffer.clone();
+                    ctx.spawn_local(async move {
+                        let res = client.send_mono_audio(data, sample_rate).await;
+                        match res {
+                            Ok((prompt, reply)) => {
+                                let tag =
+                                    buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
+                                buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
+                                buffer.insert(&mut buffer.end_iter(), &prompt);
+                                buffer.insert(&mut buffer.end_iter(), "\n");
+                                response_text(buffer, reply, text_view).await;
+                            }
+                            Err(err) => {
+                                // Replace the error message with a user-friendly alert dialog
+                                let dialog = gtk::MessageDialog::builder()
+                                    .transient_for(&window)
+                                    .modal(true)
+                                    .message_type(gtk::MessageType::Warning)
+                                    .buttons(gtk::ButtonsType::Ok)
+                                    .text("Warning")
+                                    .secondary_text(format!("Failed to chat: {}", err))
+                                    .build();
+                                dialog.run_async(|obj, _| {
+                                    obj.close();
+                                });
+                            }
+                        }
                     });
-
-                    // let spec = hound::WavSpec {
-                    //     channels: config.channels() as u16,
-                    //     sample_rate: config.sample_rate().0,
-                    //     bits_per_sample: 16,
-                    //     sample_format: hound::SampleFormat::Int,
-                    // };
-                    // let mut writer = hound::WavWriter::create("output.wav", spec).unwrap();
-                    // for sample in data {
-                    //     let amplitude = (sample * i16::MAX as f32) as i16;
-                    //     writer.write_sample(amplitude).unwrap();
-                    // }
-                    // writer.finalize().unwrap();
 
                     println!("Recording stopped");
                     record_icon.set_icon_name(Some("media-record-symbolic"));
