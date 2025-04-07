@@ -37,6 +37,7 @@ services:
       - ./server.toml:/app/server.toml
       - ./run_endpoint.sh:/app/run_endpoint.sh
       - ../TinyLLama-v0-5M-F16.gguf:/app/TinyLLama-v0-5M-F16.gguf
+      - ../whisper-tiny-ggml-tiny.bin:/app/whisper-tiny-ggml-tiny.bin
       - ./logs/server:/logs
     cap_add:
       - NET_ADMIN

@@ -429,7 +429,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
             let Some(context) = &self.user_context else {
                 self.tx
                     .send_pack(user::CleanupResponse {
-                        success: false,
+                        success: true,
                         message: "User not logged in".to_string(),
                     })
                     .await?;
