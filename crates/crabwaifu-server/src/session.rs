@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState};
 
 use crate::db;
-use crate::templ::{ChatReplyIterator, ChatTemplate};
+use crate::templ::{ChatTemplate, ReplyIterator};
 
 const CONSERVATIVE_HEAD_SIZE: usize = 17;
 const DEFAULT_STEPS: usize = 512;
@@ -23,13 +23,57 @@ pub struct Session<T, R> {
     tx: T,
     rx: R,
     flush_notify: Arc<Notify>,
-    llm_runners: HashMap<String, Llama2Runner<CpuTensor<'static>>>,
-    chat_templs: HashMap<String, ChatTemplate>,
+    llm_states: HashMap<String, LLMState>,
     whisper_runner: WhisperState,
     language: String,
     close_notify: Option<oneshot::Sender<bool>>,
     flusher_task: Option<JoinHandle<()>>,
     audio_buffer: Vec<f32>,
+}
+
+struct LLMState {
+    runner: Llama2Runner<CpuTensor<'static>>,
+    chat_templ: ChatTemplate,
+}
+
+impl LLMState {
+    fn new(runner: Llama2Runner<CpuTensor<'static>>) -> Self {
+        Self {
+            chat_templ: ChatTemplate::heuristic_guess(&runner),
+            runner,
+        }
+    }
+
+    fn generate<'a>(
+        &'a mut self,
+        prompt: &str,
+        steps: usize,
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<String>> + 'a> {
+        let stop_mark = self.chat_templ.stop_mark().to_owned();
+        let bos = self.runner.kv_cache_len() == 0;
+        let (pos, _prev_token, token) =
+            self.runner
+                .prefill(&self.chat_templ.format_prompt(prompt), bos, false)?;
+        let inner = self
+            .runner
+            .generate(pos, token, Some(steps))
+            .map(|item| anyhow::Ok(item?));
+        let iter = ReplyIterator::new(inner, stop_mark);
+        Ok(iter)
+    }
+
+    fn oneshot_completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
+        self.runner.reset_kv_cache();
+        let prompt = self.chat_templ.format(messages);
+        let stop_mark = self.chat_templ.stop_mark().to_owned();
+        let inner = self
+            .runner
+            .prefill_and_generate(&prompt, steps)?
+            .map(|item| anyhow::Ok(item?));
+        let iter = ReplyIterator::new(inner, stop_mark);
+        let content = iter.collect::<Result<Vec<_>, _>>()?.concat();
+        Ok(content)
+    }
 }
 
 impl<T: Tx, R: Rx> Session<T, R> {
@@ -48,14 +92,13 @@ impl<T: Tx, R: Rx> Session<T, R> {
             tx,
             rx,
             flush_notify,
-            chat_templs: {
+            llm_states: {
                 let mut map = HashMap::new();
-                for (name, runner) in &llm_runners {
-                    map.insert(name.clone(), ChatTemplate::heuristic_guess(runner));
+                for (name, runner) in llm_runners {
+                    map.insert(name, LLMState::new(runner));
                 }
                 map
             },
-            llm_runners,
             whisper_runner,
             language,
             close_notify: Some(close_notify),
@@ -64,69 +107,14 @@ impl<T: Tx, R: Rx> Session<T, R> {
         }
     }
 
-    fn generate<'a>(
-        runner: &'a mut Llama2Runner<CpuTensor<'static>>,
-        prompt: &str,
-        stop_mark: &str,
-        steps: usize,
-        has_stop_mark: &'a mut bool,
-    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<String>> + 'a> {
-        log::debug!("completing prompt: `{prompt}`");
-        let bos = runner.kv_cache_len() == 0;
-        let (pos, _prev_token, token) = runner.prefill(prompt, bos, false)?;
-        let inner = runner
-            .generate(pos, token, Some(steps))
-            .map(|item| anyhow::Ok(item?));
-        Ok(ChatReplyIterator::new(
-            inner,
-            vec![stop_mark.to_string()],
-            has_stop_mark,
-        ))
-    }
-
-    fn get_llm_ctx(
-        &mut self,
-        model: &str,
-    ) -> anyhow::Result<(&mut Llama2Runner<CpuTensor<'static>>, &ChatTemplate)> {
-        let runner = self
-            .llm_runners
-            .get_mut(model)
-            .ok_or(anyhow::anyhow!("no such model"))?;
-        let template = self
-            .chat_templs
-            .get(model)
-            .ok_or(anyhow::anyhow!("no such model"))?;
-        Ok((runner, template))
-    }
-
-    fn oneshot_completion(
-        &mut self,
-        model: &str,
-        messages: &[Message],
-        steps: usize,
-    ) -> anyhow::Result<String> {
-        let (runner, chat_templ) = self.get_llm_ctx(model)?;
-        let prompt = chat_templ.format(messages);
-        let stop_mark = chat_templ.stop_mark();
-        let mut has_stop_mark = false;
-        let content = Self::generate(runner, &prompt, stop_mark, steps, &mut has_stop_mark)?
-            .collect::<Result<Vec<_>, _>>()?
-            .concat();
-        if !has_stop_mark {
-            log::debug!("appended stop mark: {stop_mark}");
-            runner.prefill(stop_mark, false, false)?;
-        }
-        Ok(content)
-    }
-
     #[inline]
     async fn handle_chat(&mut self, request: chat::Request) {
         let res: anyhow::Result<()> = try {
-            let content = self.oneshot_completion(
-                &request.model,
-                &request.messages,
-                request.steps.unwrap_or(DEFAULT_STEPS),
-            )?;
+            let content = self
+                .llm_states
+                .get_mut(&request.model)
+                .ok_or(anyhow::anyhow!("no such model"))?
+                .oneshot_completion(&request.messages, request.steps.unwrap_or(DEFAULT_STEPS))?;
             self.tx
                 .send_pack(chat::Response {
                     message: Message {
@@ -147,20 +135,11 @@ impl<T: Tx, R: Rx> Session<T, R> {
     #[inline]
     async fn handle_chat_stream(&mut self, request: chat::StreamRequest) {
         let res: anyhow::Result<()> = try {
-            let chat_templ = *self
-                .chat_templs
-                .get(&request.model)
-                .ok_or(anyhow::anyhow!("no such model"))?;
-            let runner = self.llm_runners.get_mut(&request.model).unwrap();
-            let mut has_stop_mark = false;
-            let stop_mark = chat_templ.stop_mark();
-            let mut iter = Self::generate(
-                runner,
-                &chat_templ.format_prompt(&request.prompt),
-                stop_mark,
-                DEFAULT_STEPS,
-                &mut has_stop_mark,
-            )?;
+            let mut iter = self
+                .llm_states
+                .get_mut(&request.model)
+                .ok_or(anyhow::anyhow!("no such model"))?
+                .generate(&request.prompt, DEFAULT_STEPS)?;
             let mut response = String::new();
             for ele in &mut iter {
                 let token = ele?;
@@ -176,10 +155,6 @@ impl<T: Tx, R: Rx> Session<T, R> {
             }
             drop(iter);
             log::debug!("chat response: {response}");
-            if !has_stop_mark {
-                log::debug!("appended stop mark: {stop_mark}");
-                runner.prefill(stop_mark, false, false)?;
-            }
         };
         let res = if let Err(err) = res {
             self.tx.send_pack(chat::StreamResponse {

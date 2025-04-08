@@ -33,8 +33,8 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
         let window = ApplicationWindow::builder()
             .application(app)
             .title("Chat App")
-            .default_width(600)
-            .default_height(800)
+            .default_width(800)
+            .default_height(1200)
             .build();
 
         // Create a vertical box to hold our widgets
@@ -73,14 +73,26 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
             .spacing(6)
             .build();
 
+        // Create a Clear button with a broom icon
+        let clear_button = Button::builder().build();
+        let clear_icon = Image::from_icon_name("edit-clear-symbolic"); // Use a broom icon
+        clear_button.set_child(Some(&clear_icon));
+        clear_button.style_context().add_class("circular"); // Add circular style class
+
         // Create Entry for message input
         let entry = Entry::builder()
             .hexpand(true)
             .placeholder_text("Type your message...")
             .build();
 
-        // Create Send button
-        let send_button = Button::builder().label("Send").build();
+        // Create a ComboBoxText for dropdown options
+        let dropdown = gtk::ComboBoxText::builder().hexpand(false).build();
+        // Add options to the dropdown
+        for option in &["tinyllama-0.5m", "gemma-2b-it", "deepseek-r1-1.5b"] {
+            dropdown.append_text(option);
+        }
+        // Set the first option as active
+        dropdown.set_active(Some(0));
 
         // Create a Record button with an icon and circular style
         let record_button = Button::builder().build();
@@ -88,18 +100,10 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
         record_button.set_child(Some(&record_icon));
         record_button.style_context().add_class("circular"); // Add circular style class
 
-        // Create a Clear button with a broom icon
-        let clear_button = Button::builder().build();
-        let clear_icon = Image::from_icon_name("edit-clear-symbolic"); // Use a broom icon
-        clear_button.set_child(Some(&clear_icon));
-        clear_button.style_context().add_class("circular"); // Add circular style class
-
-        // Add the Clear button to the left of the Entry
-        input_box.prepend(&clear_button);
-
         // Add widgets to input_box
+        input_box.append(&clear_button);
         input_box.append(&entry);
-        input_box.append(&send_button);
+        input_box.append(&dropdown);
         input_box.append(&record_button);
 
         // Add all widgets to main_box
@@ -109,37 +113,15 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
         // Set main_box as the window's child
         window.set_child(Some(&main_box));
 
-        // Get the buffer from the TextView
-        let buffer = text_view.buffer();
-
-        // for msg in &cached {
-        //     match msg.role {
-        //         chat::Role::User => {
-        //             let tag = buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
-        //             buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
-        //             buffer.insert(&mut buffer.end_iter(), &msg.content);
-        //             buffer.insert(&mut buffer.end_iter(), "\n");
-        //         }
-        //         chat::Role::Assistant => {
-        //             let tag = buffer
-        //                 .create_tag(None, &[("foreground", &"green")])
-        //                 .unwrap();
-        //             buffer.insert_with_tags(&mut buffer.end_iter(), "Assistant: ", &[&tag]);
-        //             buffer.insert(&mut buffer.end_iter(), &msg.content);
-        //             buffer.insert(&mut buffer.end_iter(), "\n");
-        //         }
-        //         _ => {}
-        //     }
-        // }
-
-        // Connect the "clicked" signal of the send button
-        send_button.connect_clicked({
+        // Connect the "activate" signal of the entry (when Enter is pressed)
+        entry.connect_activate({
             let entry = entry.clone();
-            let buffer = buffer.clone();
             let text_view = text_view.clone();
+            let dropdown = dropdown.clone();
             move |_| {
                 let text = entry.text().to_string();
                 if !text.is_empty() {
+                    let buffer = text_view.buffer();
                     // Format the message
                     let tag = buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
                     buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
@@ -149,11 +131,11 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
 
                     let ctx = glib::MainContext::default();
                     ctx.spawn_local({
-                        let buffer = buffer.clone();
                         let text_view = text_view.clone();
+                        let dropdown = dropdown.clone();
                         async move {
                             let reply = client
-                                .stream("tinyllama-0.5m".to_string(), text)
+                                .stream(dropdown.active_text().unwrap().to_string(), text)
                                 .await
                                 .unwrap();
                             response_text(buffer, reply, text_view).await;
@@ -165,28 +147,25 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
             }
         });
 
-        // Connect the "activate" signal of the entry (when Enter is pressed)
-        entry.connect_activate({
-            let send_button = send_button.clone();
-            move |_| {
-                send_button.emit_clicked();
-            }
-        });
-
         // Connect the Clear button to clear the input field
         clear_button.connect_clicked({
-            let buffer = buffer.clone();
+            let buffer = text_view.buffer();
             let entry = entry.clone();
             let window = window.clone();
+            let dropdown = dropdown.clone();
             move |_| {
                 let ctx = glib::MainContext::default();
                 ctx.spawn_local({
                     let buffer = buffer.clone();
                     let entry = entry.clone();
                     let window = window.clone();
+                    let dropdown = dropdown.clone();
                     let client = unsafe { &mut *client };
                     async move {
-                        if let Err(err) = client.clear_session("tinyllama-0.5m".to_string()).await {
+                        if let Err(err) = client
+                            .clear_session(dropdown.active_text().unwrap().to_string())
+                            .await
+                        {
                             let dialog = gtk::MessageDialog::builder()
                                 .transient_for(&window)
                                 .modal(true)
@@ -219,8 +198,9 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
                 .expect("No input device available");
             let config = device.default_input_config().unwrap();
             let window = window.clone();
+            let dropdown = dropdown.clone();
             let text_view = text_view.clone();
-            let buffer = buffer.clone();
+            let buffer = text_view.buffer();
             move |_| {
                 let mut pausing = is_pausing.borrow_mut();
                 if *pausing {
@@ -266,9 +246,14 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
                     let window = window.clone();
                     let text_view = text_view.clone();
                     let buffer = buffer.clone();
+                    let dropdown = dropdown.clone();
                     ctx.spawn_local(async move {
                         let res = client
-                            .audio_stream("tinyllama-0.5m".to_string(), data, sample_rate)
+                            .audio_stream(
+                                dropdown.active_text().unwrap().to_string(),
+                                data,
+                                sample_rate,
+                            )
                             .await;
                         match res {
                             Ok(reply) => {

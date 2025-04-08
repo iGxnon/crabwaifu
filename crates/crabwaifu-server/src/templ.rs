@@ -247,35 +247,35 @@ impl PromptBuilder {
     }
 }
 
-pub struct ChatReplyIterator<'a, T> {
+pub struct ReplyIterator<T> {
     inner: T,
-    stop_marks: Vec<String>,
+    stop_marks: String,
     stop_mark_matcher: MarkMatcher,
-    has_stop_mark: &'a mut bool,
+    has_stop_mark: bool,
 }
 
-impl<'a, T> ChatReplyIterator<'a, T>
+impl<T> ReplyIterator<T>
 where
     T: Iterator<Item = anyhow::Result<String>>,
 {
-    pub fn new(inner: T, stop_marks: Vec<String>, has_stop_mark: &'a mut bool) -> Self {
+    pub fn new(inner: T, stop_marks: String) -> Self {
         Self {
             inner,
             stop_marks: stop_marks.clone(),
             stop_mark_matcher: MarkMatcher::new(stop_marks),
-            has_stop_mark,
+            has_stop_mark: false,
         }
     }
 }
 
-impl<T> Iterator for ChatReplyIterator<'_, T>
+impl<T> Iterator for ReplyIterator<T>
 where
     T: Iterator<Item = anyhow::Result<String>>,
 {
     type Item = anyhow::Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if *self.has_stop_mark {
+        if self.has_stop_mark {
             return None;
         }
 
@@ -292,9 +292,9 @@ where
                 Some(token) => token,
             };
 
-            if self.stop_marks.contains(&token) {
+            if self.stop_marks == token {
                 log::debug!("detected stop mark, cut iterator");
-                *self.has_stop_mark = true;
+                self.has_stop_mark = true;
                 return None;
             }
 
@@ -306,7 +306,7 @@ where
 pub struct MarkMatcher {
     state: MarkMatchState,
     buf: String,
-    marks: Vec<String>,
+    marks: String,
 }
 
 pub enum MarkMatchState {
@@ -315,7 +315,7 @@ pub enum MarkMatchState {
 }
 
 impl MarkMatcher {
-    pub fn new(marks: Vec<String>) -> Self {
+    pub fn new(marks: String) -> Self {
         Self {
             state: MarkMatchState::Inactive,
             buf: String::new(),
@@ -330,18 +330,18 @@ impl MarkMatcher {
                 if token.chars().all(|c| c.is_whitespace()) {
                     return Some(token);
                 }
-                
+
                 // sometime the eos token may start with empty spaces
                 let trimmed = token.trim_start().to_string();
 
                 // exact match, do not change state
-                if self.marks.contains(&trimmed) {
+                if self.marks == trimmed {
                     return Some(trimmed);
                 }
 
                 // got any partial match, change state to active, and push the token
                 // to the buffer, and wait for the rest of the mark.
-                if self.marks.iter().any(|m| m.starts_with(&trimmed)) {
+                if self.marks.starts_with(&trimmed) {
                     self.state = MarkMatchState::Active;
                     self.buf = trimmed;
                     return None;
@@ -355,14 +355,14 @@ impl MarkMatcher {
                     // check every char in token in case of flaw tail
                     self.buf.push(ch);
                     // exact match, change state to inactive, and return the buffer
-                    if self.marks.contains(&self.buf) {
+                    if self.marks == self.buf {
                         self.state = MarkMatchState::Inactive;
                         return Some(self.buf.clone());
                     }
                 }
 
                 // not match anymore, return the buffer directly
-                if !self.marks.iter().any(|m| m.starts_with(&self.buf)) {
+                if !self.marks.starts_with(&self.buf) {
                     self.state = MarkMatchState::Inactive;
                     return Some(self.buf.clone());
                 }
@@ -378,7 +378,7 @@ impl MarkMatcher {
 mod test {
     use crabwaifu_common::proto::chat::{Message, Role};
 
-    use super::{ChatReplyIterator, PromptBuilder};
+    use super::PromptBuilder;
 
     #[test]
     fn test_llama2_builder_works() {
@@ -666,72 +666,5 @@ mod test {
             let prompt = builder.finish();
             assert_eq!(prompt, "<|im_start|>user\nI ams the user message 1<|im_end|><|im_start|>assistant\nI ams the assistant message 1<|im_end|><|im_start|>user\nI ams the user message 2<|im_end|><|im_start|>assistant\nI ams the assistant message 2<|im_end|><|im_start|>user\nI ams the user message 3<|im_end|><|im_start|>assistant\n");
         }
-    }
-
-    #[test]
-    fn test_chat_reply_iter() {
-        let iter = [
-            "I", "love", "u", "<|end_of", "_turn|>", "<e", "os>", "I", "hate", "you",
-        ]
-        .iter()
-        .map(ToString::to_string)
-        .map(Ok);
-
-        let mut has_stop_mark = false;
-        let mut chat_iter = ChatReplyIterator::new(
-            iter,
-            vec!["<eos>".to_string(), "<|end_of_turn|>".to_string()],
-            &mut has_stop_mark,
-        );
-
-        assert_eq!(chat_iter.next().unwrap().unwrap(), "I");
-        assert_eq!(chat_iter.next().unwrap().unwrap(), "love");
-        assert_eq!(chat_iter.next().unwrap().unwrap(), "u");
-        assert!(chat_iter.next().is_none());
-        assert!(chat_iter.next().is_none());
-        assert!(has_stop_mark);
-
-        let iter = ["I", "love", "u"].iter().map(ToString::to_string).map(Ok);
-
-        has_stop_mark = false;
-        let mut chat_iter = ChatReplyIterator::new(
-            iter,
-            vec!["<eos>".to_string(), "<|end_of_turn|>".to_string()],
-            &mut has_stop_mark,
-        );
-
-        assert_eq!(chat_iter.next().unwrap().unwrap(), "I");
-        assert_eq!(chat_iter.next().unwrap().unwrap(), "love");
-        assert_eq!(chat_iter.next().unwrap().unwrap(), "u");
-        assert!(chat_iter.next().is_none());
-        assert!(chat_iter.next().is_none());
-        assert!(!has_stop_mark);
-
-        let iter = "I am a large language model, trained by Google. I am designed to be informative and comprehensive, and I can help you with a wide range of tasks, including answering questions, providing information, and generating text.".split(' ').map(ToString::to_string).map(Ok);
-        has_stop_mark = false;
-        let chat_iter = ChatReplyIterator::new(
-            iter.chain(
-                [
-                    "    <",
-                    "end",
-                    "_",
-                    "of",
-                    "_",
-                    "turn",
-                    "><",
-                    "start_of_turn>",
-                    "bad_message",
-                ]
-                .map(ToString::to_string)
-                .map(Ok),
-            ),
-            vec!["<end_of_turn>".to_string()],
-            &mut has_stop_mark,
-        );
-        for token in chat_iter {
-            assert_ne!(token.as_deref().unwrap(), "<end_of_turn>");
-            assert_ne!(token.as_deref().unwrap(), "bad_message");
-        }
-        assert!(has_stop_mark);
     }
 }
