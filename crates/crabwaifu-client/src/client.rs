@@ -139,7 +139,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         self.flush_notify.notify_one();
         let pack = self.rx.recv_pack().await?;
         if let Packet::ChatResponse(resp) = pack {
-            Ok(resp.message.content)
+            Ok(resp.message)
         } else {
             bail!("response interrupt")
         }
@@ -149,9 +149,14 @@ impl<T: Tx, R: Rx> Client<T, R> {
         &mut self,
         model: String,
         prompt: String,
+        voice: bool,
     ) -> anyhow::Result<impl Stream<Item = anyhow::Result<String>> + '_> {
         self.tx
-            .send_pack(chat::StreamRequest { model, prompt })
+            .send_pack(chat::StreamRequest {
+                model,
+                prompt,
+                voice,
+            })
             .await?;
         self.flush_notify.notify_one();
         let stream = {
@@ -187,6 +192,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         model: String,
         chunk_raw: Vec<f32>,
         sample_rate: usize,
+        voice: bool,
     ) -> anyhow::Result<impl Stream<Item = anyhow::Result<String>> + '_> {
         // Resample the audio buffer to 16000Hz
         let chunk_size = sample_rate / 100;
@@ -207,7 +213,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
                     .send_pack_with_reliability(
                         realtime::RealtimeAudioChunk {
                             data,
-                            eos: Some(model),
+                            eos: Some((model, voice)),
                         },
                         raknet_rs::Reliability::Reliable, // TODO: use reliable sequenced
                     )
@@ -229,7 +235,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
                     match res {
                         Ok(pack) => match pack {
                             Packet::ChatResponse(resp) => {
-                                yield Ok(resp.message.content);
+                                yield Ok(resp.message);
                             }
                             Packet::ChatStreamResponse(resp) => {
                                 if resp.eos {

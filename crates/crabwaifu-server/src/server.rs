@@ -2,7 +2,6 @@ use std::cmp;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-use crabml::cpu::CpuTensor;
 use crabml::gguf::{GGUFFile, GGUFFileLoader, GGUFMetadataValueType};
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::CpuLlamaModelLoader;
@@ -11,13 +10,14 @@ use crabwaifu_common::network::{
     spawn_flush_task, tcp_split, PinReader, PinWriter, TcpListenerStream,
 };
 use futures::{Stream, StreamExt};
+use kokoros::tts::koko::TTSKoko;
 use raknet_rs::server::MakeIncoming;
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::watch;
 use whisper_rs::{WhisperContext, WhisperContextParameters};
 
 use crate::config::{self, Config, TCPConfig};
-use crate::session;
+use crate::session::{self, LLMState, TTState};
 
 fn setup_llm_models(
     configs: &[config::CrabLLMConfig],
@@ -38,14 +38,12 @@ fn setup_llm_models(
     Ok(ret)
 }
 
-fn build_llm_runners(
-    models: &HashMap<String, CpuLlamaModel<'static>>,
-) -> HashMap<String, Llama2Runner<CpuTensor<'static>>> {
+fn build_llm_states(models: &HashMap<String, CpuLlamaModel<'static>>) -> HashMap<String, LLMState> {
     let mut ret = HashMap::new();
     for (name, model) in models {
         let runner = Llama2Runner::new(model, cmp::max(4096, model.conf.seq_len), true)
             .expect("llama runner cannot be initialized");
-        ret.insert(name.clone(), runner);
+        ret.insert(name.clone(), LLMState::new(runner));
     }
     ret
 }
@@ -109,8 +107,7 @@ pub async fn serve(
 ) -> anyhow::Result<()> {
     let llm_models = setup_llm_models(&config.llm)?;
     let whisper_model = setup_whisper_model(&config.whisper)?;
-    let language = config.whisper.language;
-
+    let tts_model = TTSKoko::new(&config.kokoro.model, &config.kokoro.voice).await;
     let (shutdown, watcher) = watch::channel("running");
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
@@ -120,9 +117,10 @@ pub async fn serve(
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
-                let llm_runners = build_llm_runners(&llm_models);
+                let llm_runners = build_llm_states(&llm_models);
                 let whisper_runner = whisper_model.create_state()
                     .expect("whisper runner cannot be initialized");
+                let tts_runner = TTState::new(tts_model.clone(), config.kokoro.style.clone(), config.kokoro.speed);
                 let session = session::Session::new(
                     tx,
                     rx,
@@ -130,7 +128,7 @@ pub async fn serve(
                     close_notify,
                     llm_runners,
                     whisper_runner,
-                    language.clone(),
+                    tts_runner,
                     task,
                 );
                 tokio::task::spawn(session.run(watcher.clone()));

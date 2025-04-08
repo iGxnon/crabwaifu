@@ -9,6 +9,7 @@ use crabwaifu_common::network::{Rx, Tx};
 use crabwaifu_common::proto::chat::Message;
 use crabwaifu_common::proto::{bench, chat, realtime, user, Packet};
 use crabwaifu_common::utils::TimeoutWrapper;
+use kokoros::tts::koko::TTSKoko;
 use tokio::sync::{oneshot, watch, Notify};
 use tokio::task::JoinHandle;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperState};
@@ -24,20 +25,20 @@ pub struct Session<T, R> {
     rx: R,
     flush_notify: Arc<Notify>,
     llm_states: HashMap<String, LLMState>,
-    whisper_runner: WhisperState,
-    language: String,
+    whisper_state: WhisperState,
+    tts_state: TTState,
     close_notify: Option<oneshot::Sender<bool>>,
     flusher_task: Option<JoinHandle<()>>,
     audio_buffer: Vec<f32>,
 }
 
-struct LLMState {
+pub struct LLMState {
     runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
 }
 
 impl LLMState {
-    fn new(runner: Llama2Runner<CpuTensor<'static>>) -> Self {
+    pub fn new(runner: Llama2Runner<CpuTensor<'static>>) -> Self {
         Self {
             chat_templ: ChatTemplate::heuristic_guess(&runner),
             runner,
@@ -76,6 +77,68 @@ impl LLMState {
     }
 }
 
+pub struct TTState {
+    tts_koko: TTSKoko,
+    style: String,
+    speed: f32,
+}
+
+impl TTState {
+    pub fn new(tts_koko: TTSKoko, style: String, speed: f32) -> Self {
+        Self {
+            tts_koko,
+            style,
+            speed,
+        }
+    }
+
+    /// Generate raw audio from text
+    fn tts_raw_audio(&self, text: &str) -> anyhow::Result<Vec<f32>> {
+        let res = self
+            .tts_koko
+            .tts_raw_audio(text, "en-us", &self.style, self.speed, None)
+            .map_err(|_| anyhow::anyhow!("tts error"))?;
+        Ok(res)
+    }
+}
+
+struct SentenceMatcher {
+    buffer: String,
+}
+
+impl SentenceMatcher {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+        }
+    }
+
+    fn match_sentence(&mut self, text: &str) -> Option<String> {
+        self.buffer.push_str(text);
+        for comma in [
+            ". ", ", ", "! ", "? ", ": ", ".\n", ",\n", "!\n", "?\n", ":\n",
+        ]
+        .iter()
+        {
+            if let Some(pos) = self.buffer.find(comma) {
+                let mut sentence = self.buffer.split_off(pos + comma.len());
+                mem::swap(&mut self.buffer, &mut sentence);
+                // remove sign
+                sentence = sentence
+                    .chars()
+                    .skip_while(|c| c.is_ascii_punctuation())
+                    .collect();
+                return Some(sentence);
+            }
+        }
+        None
+    }
+
+    fn remaining(&self) -> &str {
+        &self.buffer
+    }
+}
+
 impl<T: Tx, R: Rx> Session<T, R> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -83,24 +146,18 @@ impl<T: Tx, R: Rx> Session<T, R> {
         rx: R,
         flush_notify: Arc<Notify>,
         close_notify: oneshot::Sender<bool>,
-        llm_runners: HashMap<String, Llama2Runner<CpuTensor<'static>>>,
-        whisper_runner: WhisperState,
-        language: String,
+        llm_states: HashMap<String, LLMState>,
+        whisper_state: WhisperState,
+        tts_state: TTState,
         flusher_task: JoinHandle<()>,
     ) -> Self {
         Self {
             tx,
             rx,
             flush_notify,
-            llm_states: {
-                let mut map = HashMap::new();
-                for (name, runner) in llm_runners {
-                    map.insert(name, LLMState::new(runner));
-                }
-                map
-            },
-            whisper_runner,
-            language,
+            llm_states,
+            whisper_state,
+            tts_state,
             close_notify: Some(close_notify),
             flusher_task: Some(flusher_task),
             audio_buffer: Vec::new(),
@@ -110,19 +167,12 @@ impl<T: Tx, R: Rx> Session<T, R> {
     #[inline]
     async fn handle_chat(&mut self, request: chat::Request) {
         let res: anyhow::Result<()> = try {
-            let content = self
+            let message = self
                 .llm_states
                 .get_mut(&request.model)
                 .ok_or(anyhow::anyhow!("no such model"))?
                 .oneshot_completion(&request.messages, request.steps.unwrap_or(DEFAULT_STEPS))?;
-            self.tx
-                .send_pack(chat::Response {
-                    message: Message {
-                        role: chat::Role::User,
-                        content,
-                    },
-                })
-                .await?;
+            self.tx.send_pack(chat::Response { message }).await?;
         };
         if let Err(err) = res {
             log::error!("error: {err}");
@@ -140,10 +190,14 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 .get_mut(&request.model)
                 .ok_or(anyhow::anyhow!("no such model"))?
                 .generate(&request.prompt, DEFAULT_STEPS)?;
-            let mut response = String::new();
+            let mut matcher = SentenceMatcher::new();
+            let mut text = String::new();
             for ele in &mut iter {
                 let token = ele?;
-                response.push_str(&token);
+                text.push_str(&token);
+                if let Some(sentence) = matcher.match_sentence(&token) {
+                    log::debug!("got sentence: {}", sentence);
+                }
                 self.tx
                     .send_pack(chat::StreamResponse {
                         partial: token,
@@ -154,7 +208,17 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 random_yield().await;
             }
             drop(iter);
-            log::debug!("chat response: {response}");
+
+            log::debug!("eos: {}", matcher.remaining());
+            if request.voice {
+                let audio = self.tts_state.tts_raw_audio(&text)?;
+                let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
+                let sink = rodio::Sink::try_new(&stream_handle).unwrap();
+                let source = rodio::buffer::SamplesBuffer::new(1, 24000, audio);
+                // Play the audio
+                sink.append(source);
+                sink.sleep_until_end();
+            }
         };
         let res = if let Err(err) = res {
             self.tx.send_pack(chat::StreamResponse {
@@ -333,15 +397,13 @@ impl<T: Tx, R: Rx> Session<T, R> {
     #[inline]
     async fn handle_realtime_audio(&mut self, request: realtime::RealtimeAudioChunk) {
         self.audio_buffer.extend(request.data);
-        let Some(model) = request.eos else {
+        let Some((model, voice)) = request.eos else {
             return;
         };
         log::info!("got RealtimeAudioChunk({})", self.audio_buffer.len());
         let audio_buffer = self.audio_buffer.split_off(0);
 
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        // and set the language to translate to to english
-        params.set_language(Some(&self.language));
         // we also explicitly disable anything that prints to stdout
         params.set_print_special(false);
         params.set_print_progress(false);
@@ -349,29 +411,27 @@ impl<T: Tx, R: Rx> Session<T, R> {
         params.set_print_timestamps(false);
 
         let res: anyhow::Result<()> = try {
-            self.whisper_runner.full(params, &audio_buffer[..])?;
-            let num_segments = self.whisper_runner.full_n_segments()?;
-            let mut content = String::new();
+            self.whisper_state.full(params, &audio_buffer[..])?;
+            let num_segments = self.whisper_state.full_n_segments()?;
+            let mut message = String::new();
             for i in 0..num_segments {
-                let segment = self.whisper_runner.full_get_segment_text(i)?;
-                let start_timestamp = self.whisper_runner.full_get_segment_t0(i)?;
-                let end_timestamp = self.whisper_runner.full_get_segment_t1(i)?;
+                let segment = self.whisper_state.full_get_segment_text(i)?;
+                let start_timestamp = self.whisper_state.full_get_segment_t0(i)?;
+                let end_timestamp = self.whisper_state.full_get_segment_t1(i)?;
                 log::info!("[{} - {}]: {}", start_timestamp, end_timestamp, segment);
-                content.push_str(&segment);
+                message.push_str(&segment);
             }
             self.tx
                 .send_pack(chat::Response {
-                    message: Message {
-                        role: chat::Role::User,
-                        content: content.clone(),
-                    },
+                    message: message.clone(),
                 })
                 .await?;
             self.flush_notify.notify_one();
             tokio::task::yield_now().await;
             self.handle_chat_stream(chat::StreamRequest {
                 model,
-                prompt: content,
+                prompt: message,
+                voice,
             })
             .await;
         };

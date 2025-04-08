@@ -29,6 +29,12 @@ mlock = false                        # Enable mlock to lock the memory, it reduc
 model = "./whisper-tiny-ggml-tiny.bin"  # The path to the whisper model
 language = "en"                         # The language of the whisper model
 
+[kokoro]
+model = "./kokoro-v1.0.onnx"         # The path to the kokoro model
+voice = "./voices-v1.0.bin"          # The path to the voice data
+style = "af_sarah.4+af_nicole.6"     # The style of the voice, it is used to control the tone and pitch of the voice
+speed = 1.0                          # The speed of the voice, it is used to control the speed of the voice
+
 [raknet]
 sever_guid = 4170652262067404866
 advertisement = "Hi, I am server"

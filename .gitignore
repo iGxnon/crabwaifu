@@ -3,6 +3,7 @@
 **/logs
 *.gguf
 *.bin
+*.onnx
 !.gitignore
 !TinyLLama-v0-5M-F16.gguf
 !benchmark/.env

@@ -27,7 +27,7 @@ pub async fn run(
                 let mut last_token_recv: Option<Instant> = None;
                 let mut total_delay = Duration::from_secs(0);
                 let mut tokens = 0;
-                let reply = client.stream(model.clone(), line).await?;
+                let reply = client.stream(model.clone(), line, false).await?;
                 #[futures_async_stream::for_await]
                 for ele in reply {
                     tokens += 1;

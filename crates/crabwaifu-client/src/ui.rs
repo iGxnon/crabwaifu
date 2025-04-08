@@ -7,7 +7,7 @@ use futures::{Stream, StreamExt};
 use gtk::prelude::*;
 use gtk::{
     glib, Application, ApplicationWindow, Box as GtkBox, Button, Entry, Image, PasswordEntry,
-    ScrolledWindow, TextView,
+    ScrolledWindow, Switch, TextView,
 };
 
 use crate::client::Client;
@@ -100,11 +100,14 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
         record_button.set_child(Some(&record_icon));
         record_button.style_context().add_class("circular"); // Add circular style class
 
+        let switch = Switch::builder().active(false).build();
+
         // Add widgets to input_box
         input_box.append(&clear_button);
         input_box.append(&entry);
         input_box.append(&dropdown);
         input_box.append(&record_button);
+        input_box.append(&switch);
 
         // Add all widgets to main_box
         main_box.append(&scrolled_window);
@@ -118,6 +121,7 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
             let entry = entry.clone();
             let text_view = text_view.clone();
             let dropdown = dropdown.clone();
+            let switch = switch.clone();
             move |_| {
                 let text = entry.text().to_string();
                 if !text.is_empty() {
@@ -133,9 +137,14 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
                     ctx.spawn_local({
                         let text_view = text_view.clone();
                         let dropdown = dropdown.clone();
+                        let switch = switch.clone();
                         async move {
                             let reply = client
-                                .stream(dropdown.active_text().unwrap().to_string(), text)
+                                .stream(
+                                    dropdown.active_text().unwrap().to_string(),
+                                    text,
+                                    switch.is_active(),
+                                )
                                 .await
                                 .unwrap();
                             response_text(buffer, reply, text_view).await;
@@ -201,6 +210,7 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
             let dropdown = dropdown.clone();
             let text_view = text_view.clone();
             let buffer = text_view.buffer();
+            let switch = switch.clone();
             move |_| {
                 let mut pausing = is_pausing.borrow_mut();
                 if *pausing {
@@ -247,12 +257,14 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
                     let text_view = text_view.clone();
                     let buffer = buffer.clone();
                     let dropdown = dropdown.clone();
+                    let switch = switch.clone();
                     ctx.spawn_local(async move {
                         let res = client
                             .audio_stream(
                                 dropdown.active_text().unwrap().to_string(),
                                 data,
                                 sample_rate,
+                                switch.is_active(),
                             )
                             .await;
                         match res {

@@ -18,14 +18,10 @@
     - [x] Use shell script
   - [x] Packet delay histogram
   - [ ] More scenario
-- [ ] ASR & TTS
-  - [ ] HuggingFace with python
-  - [ ] Contribute crates `crabml-tts` and `crabml-asr` ?
-- [ ] RealTime API
-- [ ] Web client
-- [ ] Bulk benchmark
-- [ ] Embedded client ?
-  - [ ] Arduino ?
-  - [ ] Esp32 ?
-  - [ ] K210 ?
-- Concurrent session ?
+- [x] ASR & TTS
+  - [x] whisper-rs ASR
+  - [ ] TTS
+- [x] RealTime API
+- [x] GTK client
+- [x] Bulk benchmark
+

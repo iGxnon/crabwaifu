@@ -106,7 +106,7 @@ pub mod chat {
     /// Oneshot chat response
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Response {
-        pub message: Message,
+        pub message: String,
     }
 
     // chat::Request should be reliable (may not be ordered)
@@ -130,6 +130,7 @@ pub mod chat {
     pub struct StreamRequest {
         pub model: String,
         pub prompt: String,
+        pub voice: bool,
     }
 
     /// Stateful stream response
@@ -250,8 +251,8 @@ pub mod realtime {
         /// Raw mono audio data bytes.
         pub data: Vec<f32>,
         /// Flag indicating if this is the last chunk for the stream.
-        /// Tell what model to use
-        pub eos: Option<String>,
+        /// Tell what model to use, use voice
+        pub eos: Option<(String, bool)>,
     }
 
     impl Pack for RealtimeAudioChunk {

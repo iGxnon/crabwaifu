@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub llm: Vec<CrabLLMConfig>,
     pub whisper: WhisperConfig,
+    pub kokoro: KokoroConfig,
 
     pub listen_addr: SocketAddr,
     pub network: Network,
@@ -45,5 +46,12 @@ pub struct CrabLLMConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WhisperConfig {
     pub model: String,
-    pub language: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KokoroConfig {
+    pub model: String,
+    pub voice: String,
+    pub style: String,
+    pub speed: f32,
 }
