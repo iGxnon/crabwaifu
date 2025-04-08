@@ -16,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
         .map(toml::from_str)
         .transpose()
         .unwrap()
-        .unwrap_or_default();
+        .unwrap();
     log::debug!(
         "server configuration: \n{}",
         serde_json::to_string_pretty(&config).unwrap()

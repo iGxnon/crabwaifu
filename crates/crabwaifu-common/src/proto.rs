@@ -97,6 +97,7 @@ pub mod chat {
     /// Oneshot chat request
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct Request {
+        pub model: String,
         pub messages: Vec<Message>,
         // i.e max_tokens
         pub steps: Option<usize>,
@@ -127,6 +128,7 @@ pub mod chat {
     /// Stateful stream request
     #[derive(Debug, Clone, Deserialize, Serialize)]
     pub struct StreamRequest {
+        pub model: String,
         pub prompt: String,
     }
 
@@ -157,7 +159,6 @@ pub mod chat {
 }
 
 pub mod user {
-    use super::chat::Message;
     use super::*;
 
     #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -177,7 +178,6 @@ pub mod user {
     pub struct LoginResponse {
         pub success: bool,
         pub message: String,
-        pub context: Vec<Message>,
     }
 
     impl Pack for LoginResponse {
@@ -214,7 +214,9 @@ pub mod user {
     }
 
     #[derive(Debug, Clone, Deserialize, Serialize)]
-    pub struct CleanupRequest;
+    pub struct CleanupRequest {
+        pub model: String,
+    }
 
     impl Pack for CleanupRequest {
         const ID: PacketID = PacketID::UserCleanupRequest;
@@ -248,7 +250,8 @@ pub mod realtime {
         /// Raw mono audio data bytes.
         pub data: Vec<f32>,
         /// Flag indicating if this is the last chunk for the stream.
-        pub eos: bool,
+        /// Tell what model to use
+        pub eos: Option<String>,
     }
 
     impl Pack for RealtimeAudioChunk {

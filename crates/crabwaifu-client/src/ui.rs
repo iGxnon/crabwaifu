@@ -3,7 +3,6 @@ use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crabwaifu_common::network::{Rx, Tx};
-use crabwaifu_common::proto::chat::{self, Message};
 use futures::{Stream, StreamExt};
 use gtk::prelude::*;
 use gtk::{
@@ -28,10 +27,7 @@ pub async fn run_ui(client: &mut Client<impl Tx, impl Rx>) -> anyhow::Result<()>
     Ok(())
 }
 
-fn build_ui(
-    client: *mut Client<impl Tx, impl Rx>,
-    cached: Vec<Message>,
-) -> impl Fn(&Application) + 'static {
+fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 'static {
     move |app: &Application| {
         // Create a new window
         let window = ApplicationWindow::builder()
@@ -116,25 +112,25 @@ fn build_ui(
         // Get the buffer from the TextView
         let buffer = text_view.buffer();
 
-        for msg in &cached {
-            match msg.role {
-                chat::Role::User => {
-                    let tag = buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
-                    buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
-                    buffer.insert(&mut buffer.end_iter(), &msg.content);
-                    buffer.insert(&mut buffer.end_iter(), "\n");
-                }
-                chat::Role::Assistant => {
-                    let tag = buffer
-                        .create_tag(None, &[("foreground", &"green")])
-                        .unwrap();
-                    buffer.insert_with_tags(&mut buffer.end_iter(), "Assistant: ", &[&tag]);
-                    buffer.insert(&mut buffer.end_iter(), &msg.content);
-                    buffer.insert(&mut buffer.end_iter(), "\n");
-                }
-                _ => {}
-            }
-        }
+        // for msg in &cached {
+        //     match msg.role {
+        //         chat::Role::User => {
+        //             let tag = buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
+        //             buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
+        //             buffer.insert(&mut buffer.end_iter(), &msg.content);
+        //             buffer.insert(&mut buffer.end_iter(), "\n");
+        //         }
+        //         chat::Role::Assistant => {
+        //             let tag = buffer
+        //                 .create_tag(None, &[("foreground", &"green")])
+        //                 .unwrap();
+        //             buffer.insert_with_tags(&mut buffer.end_iter(), "Assistant: ", &[&tag]);
+        //             buffer.insert(&mut buffer.end_iter(), &msg.content);
+        //             buffer.insert(&mut buffer.end_iter(), "\n");
+        //         }
+        //         _ => {}
+        //     }
+        // }
 
         // Connect the "clicked" signal of the send button
         send_button.connect_clicked({
@@ -156,7 +152,10 @@ fn build_ui(
                         let buffer = buffer.clone();
                         let text_view = text_view.clone();
                         async move {
-                            let reply = client.stream(text).await.unwrap();
+                            let reply = client
+                                .stream("tinyllama-0.5m".to_string(), text)
+                                .await
+                                .unwrap();
                             response_text(buffer, reply, text_view).await;
                         }
                     });
@@ -187,7 +186,7 @@ fn build_ui(
                     let window = window.clone();
                     let client = unsafe { &mut *client };
                     async move {
-                        if let Err(err) = client.clear_session().await {
+                        if let Err(err) = client.clear_session("tinyllama-0.5m".to_string()).await {
                             let dialog = gtk::MessageDialog::builder()
                                 .transient_for(&window)
                                 .modal(true)
@@ -268,7 +267,9 @@ fn build_ui(
                     let text_view = text_view.clone();
                     let buffer = buffer.clone();
                     ctx.spawn_local(async move {
-                        let res = client.send_mono_audio(data, sample_rate).await;
+                        let res = client
+                            .audio_stream("tinyllama-0.5m".to_string(), data, sample_rate)
+                            .await;
                         match res {
                             Ok(reply) => {
                                 tokio::pin!(reply);
@@ -419,9 +420,9 @@ fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application
                         async move {
                             let reply = c.login(username, password).await;
                             match reply {
-                                Ok(msg) => {
+                                Ok(_) => {
                                     login_window.close();
-                                    build_ui(client, msg)(&app);
+                                    build_ui(client)(&app);
                                 }
                                 Err(err) => {
                                     let dialog = gtk::MessageDialog::builder()
@@ -513,7 +514,7 @@ fn build_login_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application
             let app = app.clone();
             move |_| {
                 login_window.close(); // Close the login window after successful login
-                build_ui(client, Vec::new())(&app);
+                build_ui(client)(&app);
             }
         });
 

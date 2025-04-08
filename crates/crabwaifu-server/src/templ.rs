@@ -326,6 +326,11 @@ impl MarkMatcher {
     pub fn push(&mut self, token: String) -> Option<String> {
         match self.state {
             MarkMatchState::Inactive => {
+                // allow white space pass
+                if token.chars().all(|c| c.is_whitespace()) {
+                    return Some(token);
+                }
+                
                 // sometime the eos token may start with empty spaces
                 let trimmed = token.trim_start().to_string();
 

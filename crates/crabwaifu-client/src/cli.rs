@@ -8,7 +8,11 @@ use tokio::time::Instant;
 
 use crate::client::Client;
 
-pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow::Result<()> {
+pub async fn run(
+    client: &mut Client<impl Tx, impl Rx>,
+    verbose: bool,
+    model: String,
+) -> anyhow::Result<()> {
     let mut rl = DefaultEditor::new()?;
     loop {
         let readline = rl.readline(">> ");
@@ -23,7 +27,7 @@ pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow
                 let mut last_token_recv: Option<Instant> = None;
                 let mut total_delay = Duration::from_secs(0);
                 let mut tokens = 0;
-                let reply = client.stream(line).await?;
+                let reply = client.stream(model.clone(), line).await?;
                 #[futures_async_stream::for_await]
                 for ele in reply {
                     tokens += 1;
@@ -56,9 +60,11 @@ pub async fn run(client: &mut Client<impl Tx, impl Rx>, verbose: bool) -> anyhow
                 }
             }
             Err(ReadlineError::Interrupted) => {
+                println!("Bye.");
                 break;
             }
             Err(ReadlineError::Eof) => {
+                println!("Bye.");
                 break;
             }
             Err(err) => {

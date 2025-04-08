@@ -1,6 +1,8 @@
 use std::cmp;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
+use crabml::cpu::CpuTensor;
 use crabml::gguf::{GGUFFile, GGUFFileLoader, GGUFMetadataValueType};
 use crabml_llama2::llama2::Llama2Runner;
 use crabml_llama2::model::CpuLlamaModelLoader;
@@ -17,19 +19,35 @@ use whisper_rs::{WhisperContext, WhisperContextParameters};
 use crate::config::{self, Config, TCPConfig};
 use crate::session;
 
-fn setup_llama_model(config: &config::CrabLlamaConfig) -> anyhow::Result<CpuLlamaModel<'static>> {
-    let gl = GGUFFileLoader::new(&config.model, config.mlock)?;
-    let gl: &'static GGUFFileLoader = Box::leak(Box::new(gl));
-    let gf: &'static GGUFFile<'static> = Box::leak(Box::new(gl.open()?));
-    dump_gguf_metadata(gf);
+fn setup_llm_models(
+    configs: &[config::CrabLLMConfig],
+) -> anyhow::Result<HashMap<String, CpuLlamaModel<'static>>> {
+    let mut ret = HashMap::new();
+    for config in configs {
+        let gl = GGUFFileLoader::new(&config.model, config.mlock)?;
+        let gl: &'static GGUFFileLoader = Box::leak(Box::new(gl));
+        let gf: &'static GGUFFile<'static> = Box::leak(Box::new(gl.open()?));
+        dump_gguf_metadata(gf);
+        let model_cpu = CpuLlamaModelLoader::new()
+            .with_thread_num(config.threads)
+            .with_temperature(config.temperature)
+            .with_probability(config.probability)
+            .load(gf)?;
+        ret.insert(config.name.clone(), model_cpu);
+    }
+    Ok(ret)
+}
 
-    let model_cpu = CpuLlamaModelLoader::new()
-        .with_thread_num(config.threads)
-        .with_temperature(config.temperature)
-        .with_probability(config.probability)
-        .load(gf)?;
-
-    Ok(model_cpu)
+fn build_llm_runners(
+    models: &HashMap<String, CpuLlamaModel<'static>>,
+) -> HashMap<String, Llama2Runner<CpuTensor<'static>>> {
+    let mut ret = HashMap::new();
+    for (name, model) in models {
+        let runner = Llama2Runner::new(model, cmp::max(4096, model.conf.seq_len), true)
+            .expect("llama runner cannot be initialized");
+        ret.insert(name.clone(), runner);
+    }
+    ret
 }
 
 fn setup_whisper_model(config: &config::WhisperConfig) -> anyhow::Result<WhisperContext> {
@@ -89,12 +107,8 @@ pub async fn serve(
     incoming: impl Stream<Item = (impl PinReader, impl PinWriter)>,
     config: Config,
 ) -> anyhow::Result<()> {
-    let llama_model = setup_llama_model(&config.llama)?;
+    let llm_models = setup_llm_models(&config.llm)?;
     let whisper_model = setup_whisper_model(&config.whisper)?;
-
-    let seq_len = cmp::max(llama_model.conf.seq_len, config.llama.max_context_length);
-    let default_steps = config.llama.steps;
-    let f16_kv_cache = config.llama.f16_kv_cache;
     let language = config.whisper.language;
 
     let (shutdown, watcher) = watch::channel("running");
@@ -106,18 +120,15 @@ pub async fn serve(
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
-                let llama_runner = Llama2Runner::new(&llama_model, seq_len, f16_kv_cache)
-                    .expect("llama runner cannot be initialized");
+                let llm_runners = build_llm_runners(&llm_models);
                 let whisper_runner = whisper_model.create_state()
                     .expect("whisper runner cannot be initialized");
-
                 let session = session::Session::new(
                     tx,
                     rx,
                     flush_notify,
                     close_notify,
-                    llama_runner,
-                    default_steps,
+                    llm_runners,
                     whisper_runner,
                     language.clone(),
                     task,

@@ -74,11 +74,7 @@ pub async fn raknet_connect_to(
 }
 
 impl<T: Tx, R: Rx> Client<T, R> {
-    pub async fn login(
-        &mut self,
-        username: String,
-        password: String,
-    ) -> anyhow::Result<Vec<Message>> {
+    pub async fn login(&mut self, username: String, password: String) -> anyhow::Result<()> {
         self.tx
             .send_pack(user::LoginRequest { username, password })
             .await?;
@@ -86,7 +82,7 @@ impl<T: Tx, R: Rx> Client<T, R> {
         let pack = self.rx.recv_pack().await.unwrap();
         if let Packet::UserLoginResponse(resp) = pack {
             if resp.success {
-                Ok(resp.context)
+                Ok(())
             } else {
                 bail!(resp.message);
             }
@@ -112,8 +108,8 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
     }
 
-    pub async fn clear_session(&mut self) -> anyhow::Result<()> {
-        self.tx.send_pack(user::CleanupRequest {}).await?;
+    pub async fn clear_session(&mut self, model: String) -> anyhow::Result<()> {
+        self.tx.send_pack(user::CleanupRequest { model }).await?;
         self.flush_notify.notify_one();
         let pack = self.rx.recv_pack().await.unwrap();
         if let Packet::UserCleanupResponse(resp) = pack {
@@ -129,10 +125,17 @@ impl<T: Tx, R: Rx> Client<T, R> {
 
     pub async fn oneshot(
         &mut self,
+        model: String,
         messages: Vec<Message>,
         steps: Option<usize>,
     ) -> anyhow::Result<String> {
-        self.tx.send_pack(chat::Request { messages, steps }).await?;
+        self.tx
+            .send_pack(chat::Request {
+                model,
+                messages,
+                steps,
+            })
+            .await?;
         self.flush_notify.notify_one();
         let pack = self.rx.recv_pack().await?;
         if let Packet::ChatResponse(resp) = pack {
@@ -144,9 +147,12 @@ impl<T: Tx, R: Rx> Client<T, R> {
 
     pub async fn stream(
         &mut self,
+        model: String,
         prompt: String,
     ) -> anyhow::Result<impl Stream<Item = anyhow::Result<String>> + '_> {
-        self.tx.send_pack(chat::StreamRequest { prompt }).await?;
+        self.tx
+            .send_pack(chat::StreamRequest { model, prompt })
+            .await?;
         self.flush_notify.notify_one();
         let stream = {
             #[futures_async_stream::stream]
@@ -176,8 +182,9 @@ impl<T: Tx, R: Rx> Client<T, R> {
     }
 
     // first message is user prompt
-    pub async fn send_mono_audio(
+    pub async fn audio_stream(
         &mut self,
+        model: String,
         chunk_raw: Vec<f32>,
         sample_rate: usize,
     ) -> anyhow::Result<impl Stream<Item = anyhow::Result<String>> + '_> {
@@ -191,20 +198,24 @@ impl<T: Tx, R: Rx> Client<T, R> {
             chunks.extend(&resampled_chunk[0]);
         }
 
-        let per_chunk = (self.mtu as usize - CONSERVATIVE_HEAD_SIZE) / mem::size_of::<i16>();
-        while !chunks.is_empty() {
+        let per_chunk = (self.mtu as usize - CONSERVATIVE_HEAD_SIZE) / mem::size_of::<f32>();
+        loop {
             let mut data = chunks.split_off(cmp::min(chunks.len(), per_chunk));
             mem::swap(&mut data, &mut chunks);
             if chunks.is_empty() {
                 self.tx
                     .send_pack_with_reliability(
-                        realtime::RealtimeAudioChunk { data, eos: true },
+                        realtime::RealtimeAudioChunk {
+                            data,
+                            eos: Some(model),
+                        },
                         raknet_rs::Reliability::Reliable, // TODO: use reliable sequenced
                     )
                     .await?;
+                break;
             } else {
                 self.tx
-                    .send_pack(realtime::RealtimeAudioChunk { data, eos: false })
+                    .send_pack(realtime::RealtimeAudioChunk { data, eos: None })
                     .await?;
             }
         }

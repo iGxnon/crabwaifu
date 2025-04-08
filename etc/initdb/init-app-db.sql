@@ -11,13 +11,26 @@ CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);
 -- Unique index for username
 ALTER TABLE users ADD CONSTRAINT unique_username UNIQUE (username);
 
+CREATE TABLE IF NOT EXISTS models (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_models_name ON models (name);
+-- Unique index for name
+ALTER TABLE models ADD CONSTRAINT unique_name UNIQUE (name);
+
 CREATE TABLE IF NOT EXISTS history (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
+    model_id INT NOT NULL,
     context TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_history_user_id ON history (user_id);

@@ -39,6 +39,8 @@ enum Command {
     Cli {
         #[arg(short, long, default_value_t = false)]
         verbose: bool,
+        #[arg(short, long, default_value = "tinyllama-0.5m")]
+        model: String,
     },
     Ui,
     Bench {
@@ -60,7 +62,7 @@ enum Command {
 
 async fn run(client: &mut Client<impl Tx, impl Rx>, args: Args) -> anyhow::Result<()> {
     match args.command {
-        Command::Cli { verbose } => cli::run(client, verbose).await,
+        Command::Cli { verbose, model } => cli::run(client, verbose, model).await,
         Command::Ui => ui::run_ui(client).await,
         Command::Bench {
             suite,
