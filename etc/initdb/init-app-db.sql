@@ -26,15 +26,30 @@ CREATE TABLE IF NOT EXISTS history (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
     model_id INT NOT NULL,
-    context TEXT NOT NULL,
+    messages TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
     FOREIGN KEY (model_id) REFERENCES models (id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_history_user_id ON history (user_id);
-ALTER TABLE history ADD CONSTRAINT unique_history_user_id UNIQUE (user_id);
+CREATE INDEX IF NOT EXISTS idx_history_user_id_model_id ON history (user_id, model_id);
+ALTER TABLE history ADD CONSTRAINT unique_history_user_id_model_id UNIQUE (user_id, model_id);
+
+CREATE TABLE IF NOT EXISTS kvcache (
+    id SERIAL PRIMARY KEY,
+    history_id INT NOT NULL,
+    layer INT NOT NULL,
+    key_cache BYTEA NOT NULL,
+    value_cache BYTEA NOT NULL,
+    seq_len INT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    FOREIGN KEY (history_id) REFERENCES history (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_kvcache_history_id_layer ON kvcache (history_id, layer);
+ALTER TABLE kvcache ADD CONSTRAINT unique_kvcache_history_id_layer UNIQUE (history_id, layer);
 
 -- Trigger to auto update updated_at column
 CREATE

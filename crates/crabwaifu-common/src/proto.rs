@@ -16,6 +16,10 @@ pub enum Packet {
     UserRegisterResponse(user::RegisterResponse),
     UserCleanupRequest(user::CleanupRequest),
     UserCleanupResponse(user::CleanupResponse),
+    FetchMessageRequest(user::FetchMessageRequest),
+    FetchMessageResponse(user::FetchMessageResponse),
+    FetchModelsRequest(user::FetchModelsRequest),
+    FetchModelsResponse(user::FetchModelsResponse),
     RealtimeAudioChunk(realtime::RealtimeAudioChunk),
 
     BenchUnreliableRequest(bench::UnreliableRequest),
@@ -40,7 +44,11 @@ pub enum PacketID {
     UserRegisterResponse = 8,
     UserCleanupRequest = 9,
     UserCleanupResponse = 10,
-    RealtimeAudioChunk = 11,
+    FetchMessageRequest = 11,
+    FetchMessageResponse = 12,
+    FetchModelsRequest = 13,
+    FetchModelsResponse = 14,
+    RealtimeAudioChunk = 15,
 
     BenchUnreliableRequest = 200,
     BenchUnreliableResponse = 201,
@@ -63,7 +71,11 @@ impl PacketID {
             8 => PacketID::UserRegisterResponse,
             9 => PacketID::UserCleanupRequest,
             10 => PacketID::UserCleanupResponse,
-            11 => PacketID::RealtimeAudioChunk,
+            11 => PacketID::FetchMessageRequest,
+            12 => PacketID::FetchMessageResponse,
+            13 => PacketID::FetchModelsRequest,
+            14 => PacketID::FetchModelsResponse,
+            15 => PacketID::RealtimeAudioChunk,
 
             200 => PacketID::BenchUnreliableRequest,
             201 => PacketID::BenchUnreliableResponse,
@@ -234,6 +246,52 @@ pub mod user {
 
     impl Pack for CleanupResponse {
         const ID: PacketID = PacketID::UserCleanupResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct FetchMessageRequest {
+        pub model: String,
+    }
+
+    impl Pack for FetchMessageRequest {
+        const ID: PacketID = PacketID::FetchMessageRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct FetchMessageResponse {
+        pub messages: Vec<chat::Message>,
+    }
+
+    impl Pack for FetchMessageResponse {
+        const ID: PacketID = PacketID::FetchMessageResponse;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct FetchModelsRequest {}
+
+    impl Pack for FetchModelsRequest {
+        const ID: PacketID = PacketID::FetchModelsRequest;
+        const ORDER_CHANNEL: u8 = 0;
+        const PRIORITY: Priority = Priority::Medium;
+        const RELIABILITY: Reliability = Reliability::Reliable;
+    }
+
+    #[derive(Debug, Clone, Deserialize, Serialize)]
+    pub struct FetchModelsResponse {
+        pub models: Vec<String>,
+    }
+
+    impl Pack for FetchModelsResponse {
+        const ID: PacketID = PacketID::FetchModelsResponse;
         const ORDER_CHANNEL: u8 = 0;
         const PRIORITY: Priority = Priority::Medium;
         const RELIABILITY: Reliability = Reliability::Reliable;

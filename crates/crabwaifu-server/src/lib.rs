@@ -1,5 +1,6 @@
 #![feature(try_blocks)]
 #![feature(let_chains)]
+#![feature(string_remove_matches)]
 
 pub mod session;
 

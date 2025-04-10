@@ -144,6 +144,22 @@ pub trait Rx: Send + Sync + 'static {
                 PacketID::UserCleanupResponse => {
                     deserialize!(user::CleanupResponse, Packet::UserCleanupResponse, raw)
                 }
+                PacketID::FetchMessageRequest => {
+                    deserialize!(user::FetchMessageRequest, Packet::FetchMessageRequest, raw)
+                }
+                PacketID::FetchMessageResponse => {
+                    deserialize!(
+                        user::FetchMessageResponse,
+                        Packet::FetchMessageResponse,
+                        raw
+                    )
+                }
+                PacketID::FetchModelsRequest => {
+                    deserialize!(user::FetchModelsRequest, Packet::FetchModelsRequest, raw)
+                }
+                PacketID::FetchModelsResponse => {
+                    deserialize!(user::FetchModelsResponse, Packet::FetchModelsResponse, raw)
+                }
                 PacketID::RealtimeAudioChunk => {
                     deserialize!(
                         realtime::RealtimeAudioChunk,

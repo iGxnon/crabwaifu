@@ -1,5 +1,5 @@
 listen_addr = "0.0.0.0:8808"
-network = "both"
+network = "raknet"
 
 [[llm]]
 name = "tinyllama-0.5m"              # The name of the model, it is used to identify the model

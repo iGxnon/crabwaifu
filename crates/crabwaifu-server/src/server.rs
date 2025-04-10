@@ -38,12 +38,15 @@ fn setup_llm_models(
     Ok(ret)
 }
 
-fn build_llm_states(models: &HashMap<String, CpuLlamaModel<'static>>) -> HashMap<String, LLMState> {
+fn build_llm_states(
+    models: &HashMap<String, CpuLlamaModel<'static>>,
+    model_mapping: &HashMap<String, i32>,
+) -> HashMap<String, LLMState> {
     let mut ret = HashMap::new();
     for (name, model) in models {
         let runner = Llama2Runner::new(model, cmp::max(4096, model.conf.seq_len), true)
             .expect("llama runner cannot be initialized");
-        ret.insert(name.clone(), LLMState::new(runner));
+        ret.insert(name.clone(), LLMState::new(model_mapping[name], runner));
     }
     ret
 }
@@ -104,6 +107,7 @@ pub async fn make_raknet_incoming(
 pub async fn serve(
     incoming: impl Stream<Item = (impl PinReader, impl PinWriter)>,
     config: Config,
+    model_mapping: &HashMap<String, i32>,
 ) -> anyhow::Result<()> {
     let llm_models = setup_llm_models(&config.llm)?;
     let whisper_model = setup_whisper_model(&config.whisper)?;
@@ -117,7 +121,7 @@ pub async fn serve(
         tokio::select! {
             Some((rx, writer)) = incoming.next() => {
                 let (tx, flush_notify, close_notify, task) = spawn_flush_task(writer);
-                let llm_runners = build_llm_states(&llm_models);
+                let llm_runners = build_llm_states(&llm_models, model_mapping);
                 let whisper_runner = whisper_model.create_state()
                     .expect("whisper runner cannot be initialized");
                 let tts_runner = TTState::new(tts_model.clone(), config.kokoro.style.clone(), config.kokoro.speed);

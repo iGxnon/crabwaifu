@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crabwaifu_common::network::{Rx, Tx};
+use crabwaifu_common::proto::chat;
 use futures::{Stream, StreamExt};
 use gtk::prelude::*;
 use gtk::{
@@ -85,14 +86,44 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
             .placeholder_text("Type your message...")
             .build();
 
+        let models = {
+            let client = unsafe { &mut *client };
+            block_on(client.fetch_models()).unwrap()
+        };
         // Create a ComboBoxText for dropdown options
         let dropdown = gtk::ComboBoxText::builder().hexpand(false).build();
         // Add options to the dropdown
-        for option in &["tinyllama-0.5m", "gemma-2b-it", "deepseek-r1-1.5b"] {
+        for option in &models {
             dropdown.append_text(option);
         }
         // Set the first option as active
         dropdown.set_active(Some(0));
+
+        {
+            let client = unsafe { &mut *client };
+            let messages = block_on(client.fetch_session(models[0].clone())).unwrap();
+            let buffer = text_view.buffer();
+            buffer.set_text("");
+            for message in messages {
+                match message.role {
+                    chat::Role::User => {
+                        let tag = buffer.create_tag(None, &[("foreground", &"blue")]).unwrap();
+                        buffer.insert_with_tags(&mut buffer.end_iter(), "You: ", &[&tag]);
+                        buffer.insert(&mut buffer.end_iter(), &message.content);
+                        buffer.insert(&mut buffer.end_iter(), "\n");
+                    }
+                    chat::Role::Assistant => {
+                        let tag = buffer
+                            .create_tag(None, &[("foreground", &"green")])
+                            .unwrap();
+                        buffer.insert_with_tags(&mut buffer.end_iter(), "Assistant: ", &[&tag]);
+                        buffer.insert(&mut buffer.end_iter(), &message.content);
+                        buffer.insert(&mut buffer.end_iter(), "\n");
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         // Create a Record button with an icon and circular style
         let record_button = Button::builder().build();
@@ -115,6 +146,54 @@ fn build_ui(client: *mut Client<impl Tx, impl Rx>) -> impl Fn(&Application) + 's
 
         // Set main_box as the window's child
         window.set_child(Some(&main_box));
+
+        dropdown.connect_changed({
+            let text_view = text_view.clone();
+            let buffer = text_view.buffer();
+            let dropdown = dropdown.clone();
+            move |_| {
+                // Get the selected option
+                let client = unsafe { &mut *client };
+                let ctx = glib::MainContext::default();
+                let model = dropdown.active_text().unwrap().to_string();
+                ctx.spawn_local({
+                    let buffer = buffer.clone();
+                    async move {
+                        let messages = client.fetch_session(model).await.unwrap();
+                        buffer.set_text("");
+                        for message in messages {
+                            match message.role {
+                                chat::Role::User => {
+                                    let tag = buffer
+                                        .create_tag(None, &[("foreground", &"blue")])
+                                        .unwrap();
+                                    buffer.insert_with_tags(
+                                        &mut buffer.end_iter(),
+                                        "You: ",
+                                        &[&tag],
+                                    );
+                                    buffer.insert(&mut buffer.end_iter(), &message.content);
+                                    buffer.insert(&mut buffer.end_iter(), "\n");
+                                }
+                                chat::Role::Assistant => {
+                                    let tag = buffer
+                                        .create_tag(None, &[("foreground", &"green")])
+                                        .unwrap();
+                                    buffer.insert_with_tags(
+                                        &mut buffer.end_iter(),
+                                        "Assistant: ",
+                                        &[&tag],
+                                    );
+                                    buffer.insert(&mut buffer.end_iter(), &message.content);
+                                    buffer.insert(&mut buffer.end_iter(), "\n");
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                });
+            }
+        });
 
         // Connect the "activate" signal of the entry (when Enter is pressed)
         entry.connect_activate({
@@ -540,4 +619,18 @@ async fn response_text(
     buffer.insert(&mut end, "\n");
     // Scroll to end
     text_view.scroll_to_iter(&mut buffer.end_iter(), 0.0, false, 0.0, 0.0);
+}
+
+fn block_on<F, R>(f: F) -> R
+where
+    F: std::future::Future<Output = R>,
+{
+    let mut f = Box::pin(f);
+    let waker = futures::task::noop_waker();
+    let mut cx = std::task::Context::from_waker(&waker);
+    loop {
+        if let std::task::Poll::Ready(v) = f.as_mut().poll(&mut cx) {
+            return v;
+        }
+    }
 }

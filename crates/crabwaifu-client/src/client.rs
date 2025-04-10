@@ -123,6 +123,30 @@ impl<T: Tx, R: Rx> Client<T, R> {
         }
     }
 
+    pub async fn fetch_session(&mut self, model: String) -> anyhow::Result<Vec<Message>> {
+        self.tx
+            .send_pack(user::FetchMessageRequest { model })
+            .await?;
+        self.flush_notify.notify_one();
+        let pack = self.rx.recv_pack().await.unwrap();
+        if let Packet::FetchMessageResponse(resp) = pack {
+            Ok(resp.messages)
+        } else {
+            bail!("response interrupt");
+        }
+    }
+
+    pub async fn fetch_models(&mut self) -> anyhow::Result<Vec<String>> {
+        self.tx.send_pack(user::FetchModelsRequest {}).await?;
+        self.flush_notify.notify_one();
+        let pack = self.rx.recv_pack().await.unwrap();
+        if let Packet::FetchModelsResponse(resp) = pack {
+            Ok(resp.models)
+        } else {
+            bail!("response interrupt");
+        }
+    }
+
     pub async fn oneshot(
         &mut self,
         model: String,

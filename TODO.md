@@ -20,7 +20,7 @@
   - [ ] More scenario
 - [x] ASR & TTS
   - [x] whisper-rs ASR
-  - [ ] TTS
+  - [x] TTS
 - [x] RealTime API
 - [x] GTK client
 - [x] Bulk benchmark

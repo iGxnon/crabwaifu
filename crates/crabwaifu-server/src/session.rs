@@ -33,15 +33,25 @@ pub struct Session<T, R> {
 }
 
 pub struct LLMState {
+    db_id: i32,
     runner: Llama2Runner<CpuTensor<'static>>,
     chat_templ: ChatTemplate,
+    user_context: Option<UserContext>,
+}
+
+struct UserContext {
+    user_id: i32,
+    message: Vec<Message>,
+    load_message: Option<Vec<Message>>,
 }
 
 impl LLMState {
-    pub fn new(runner: Llama2Runner<CpuTensor<'static>>) -> Self {
+    pub fn new(db_id: i32, runner: Llama2Runner<CpuTensor<'static>>) -> Self {
         Self {
+            db_id,
             chat_templ: ChatTemplate::heuristic_guess(&runner),
             runner,
+            user_context: None,
         }
     }
 
@@ -50,21 +60,34 @@ impl LLMState {
         prompt: &str,
         steps: usize,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<String>> + 'a> {
-        let stop_mark = self.chat_templ.stop_mark().to_owned();
+        let mut message = Vec::new();
+        if let Some(user_context) = &mut self.user_context {
+            if let Some(c) = user_context.load_message.take() {
+                message.extend(c);
+            }
+        }
+        message.push(Message {
+            role: chat::Role::User,
+            content: prompt.to_string(),
+        });
         let bos = self.runner.kv_cache_len() == 0;
+        let stop_mark = self.chat_templ.stop_mark().to_owned();
         let (pos, _prev_token, token) =
             self.runner
-                .prefill(&self.chat_templ.format_prompt(prompt), bos, false)?;
+                .prefill(&self.chat_templ.format(&message), bos, false)?;
         let inner = self
             .runner
             .generate(pos, token, Some(steps))
             .map(|item| anyhow::Ok(item?));
+        if let Some(user_context) = &mut self.user_context {
+            user_context.message.extend(message);
+        }
         let iter = ReplyIterator::new(inner, stop_mark);
         Ok(iter)
     }
 
     fn oneshot_completion(&mut self, messages: &[Message], steps: usize) -> anyhow::Result<String> {
-        self.runner.reset_kv_cache();
+        self.cleanup();
         let prompt = self.chat_templ.format(messages);
         let stop_mark = self.chat_templ.stop_mark().to_owned();
         let inner = self
@@ -74,6 +97,121 @@ impl LLMState {
         let iter = ReplyIterator::new(inner, stop_mark);
         let content = iter.collect::<Result<Vec<_>, _>>()?.concat();
         Ok(content)
+    }
+
+    fn create_user_context(&mut self, user_id: i32) {
+        self.user_context = Some(UserContext {
+            user_id,
+            message: Vec::new(),
+            load_message: None,
+        });
+    }
+
+    fn cleanup(&mut self) {
+        self.runner.reset_kv_cache();
+        if let Some(UserContext { user_id, .. }) = self.user_context {
+            self.user_context = Some(UserContext {
+                user_id,
+                message: Vec::new(),
+                load_message: None,
+            });
+        }
+    }
+
+    async fn save_to_db(&self) -> anyhow::Result<()> {
+        let Some(user_context) = &self.user_context else {
+            return Ok(());
+        };
+        if user_context.load_message.is_some() {
+            // no changes
+            return Ok(());
+        }
+        let message_str = serde_json::to_string(&user_context.message)?;
+        let (_history_id,): (i32,) = sqlx::query_as(
+            r#"
+INSERT INTO history (user_id, model_id, messages) 
+VALUES ($1, $2, $3) 
+ON CONFLICT (user_id, model_id) 
+DO UPDATE SET 
+    messages = $3 
+RETURNING id
+"#,
+        )
+        .bind(user_context.user_id)
+        .bind(self.db_id)
+        .bind(message_str)
+        .fetch_one(db::pool())
+        .await?;
+
+        //         let kvcache = self.runner.dump_kv_cache();
+        //         for (layer, (key_cache, value_cache)) in kvcache
+        //             .key_cache
+        //             .into_iter()
+        //             .zip(kvcache.value_cache.into_iter())
+        //             .enumerate()
+        //         {
+        //             sqlx::query(
+        //                 r#"
+        // INSERT INTO kvcache (history_id, layer, key_cache, value_cache, seq_len)
+        // VALUES ($1, $2, $3, $4, $5)
+        // ON CONFLICT (history_id, layer)
+        // DO UPDATE SET
+        //     key_cache = $3,
+        //     value_cache = $4,
+        //     seq_len = $5
+        //             "#,
+        //             )
+        //             .bind(history_id)
+        //             .bind(layer as i32)
+        //             .bind(key_cache)
+        //             .bind(value_cache)
+        //             .bind(kvcache.seq_len as i32)
+        //             .execute(pool())
+        //             .await?;
+        //         }
+
+        Ok(())
+    }
+
+    async fn load_from_db(&mut self) -> anyhow::Result<()> {
+        let Some(user_context) = &mut self.user_context else {
+            return Ok(());
+        };
+        let (_history_id, message_str): (i32, String) =
+            sqlx::query_as("SELECT id, messages FROM history WHERE user_id = $1 AND model_id = $2")
+                .bind(user_context.user_id)
+                .bind(self.db_id)
+                .fetch_one(db::pool())
+                .await?;
+        let message: Vec<Message> = serde_json::from_str(&message_str)?;
+        user_context.load_message = Some(message);
+
+        // TOO slow
+        // self.feed_ctx()?;
+
+        // let cache: Vec<(i32, Vec<u8>, Vec<u8>, i32)> = sqlx::query_as(
+        //     "SELECT layer, key_cache, value_cache, seq_len FROM kvcache WHERE history_id = $1",
+        // )
+        // .bind(history_id)
+        // .fetch_all(pool())
+        // .await?;
+        // let layers = (cache.iter().max_by_key(|v| v.0).unwrap().0 + 1) as usize;
+        // let mut key_cache = vec![Default::default(); layers];
+        // let mut value_cache = vec![Default::default(); layers];
+        // let mut seq_len = 0;
+        // for (layer, k, v, s) in cache {
+        //     key_cache[layer as usize] = k;
+        //     value_cache[layer as usize] = v;
+        //     seq_len = s as usize;
+        // }
+        // let kvcache = RawKVCache {
+        //     key_cache,
+        //     value_cache,
+        //     seq_len,
+        // };
+        // self.runner.load_kv_cache(kvcache)?;
+
+        Ok(())
     }
 }
 
@@ -185,11 +323,11 @@ impl<T: Tx, R: Rx> Session<T, R> {
     #[inline]
     async fn handle_chat_stream(&mut self, request: chat::StreamRequest) {
         let res: anyhow::Result<()> = try {
-            let mut iter = self
+            let llm = self
                 .llm_states
                 .get_mut(&request.model)
-                .ok_or(anyhow::anyhow!("no such model"))?
-                .generate(&request.prompt, DEFAULT_STEPS)?;
+                .ok_or(anyhow::anyhow!("no such model"))?;
+            let mut iter = llm.generate(&request.prompt, DEFAULT_STEPS)?;
             let mut matcher = SentenceMatcher::new();
             let mut text = String::new();
             for ele in &mut iter {
@@ -209,8 +347,19 @@ impl<T: Tx, R: Rx> Session<T, R> {
             }
             drop(iter);
 
+            self.flush_notify.notify_one();
+            tokio::task::yield_now().await;
+
+            if let Some(user_context) = &mut llm.user_context {
+                user_context.message.push(Message {
+                    role: chat::Role::Assistant,
+                    content: text.to_string(),
+                });
+            }
+
             log::debug!("eos: {}", matcher.remaining());
             if request.voice {
+                text.remove_matches(['*', '_', '`', '#', '>', '<', '~', '^']);
                 let audio = self.tts_state.tts_raw_audio(&text)?;
                 let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
                 let sink = rodio::Sink::try_new(&stream_handle).unwrap();
@@ -238,83 +387,6 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     #[inline]
-    async fn handle_bench_unreliable(&mut self, request: bench::UnreliableRequest) {
-        let max_len = request.mtu - CONSERVATIVE_HEAD_SIZE;
-        let parts = request.data_len.div_ceil(max_len);
-        let mut data = vec![0; request.data_len];
-        let mut res = try {
-            for _ in 0..parts {
-                let mut data_partial = data.split_off(cmp::min(max_len, data.len()));
-                mem::swap(&mut data, &mut data_partial);
-                self.tx
-                    .send_pack(bench::UnreliableResponse { data_partial })
-                    .await?;
-                random_yield().await;
-            }
-            debug_assert!(data.is_empty(), "data remains");
-        };
-        if let Err(err) = res {
-            log::error!("transfer data: {err}");
-        }
-        // a reliable packet sent as EOF
-        res = self
-            .tx
-            .send_pack(bench::UnreliableRequest {
-                data_len: 0,
-                mtu: 0,
-            })
-            .await;
-        if let Err(err) = res {
-            log::error!("error: {err}");
-        }
-    }
-
-    #[inline]
-    async fn handle_bench_commutative(&mut self, request: bench::CommutativeRequest) {
-        let per_len = request.batch_size;
-        let parts = request.data_len.div_ceil(per_len);
-        let mut data = vec![0; request.data_len];
-        let res: anyhow::Result<()> = try {
-            for _ in 0..parts {
-                let mut data_partial = data.split_off(cmp::min(per_len, data.len()));
-                mem::swap(&mut data, &mut data_partial);
-                self.tx
-                    .send_pack(bench::CommutativeResponse { data_partial })
-                    .await?;
-                random_yield().await;
-            }
-            debug_assert!(data.is_empty(), "data remains");
-        };
-        if let Err(err) = res {
-            log::error!("error: {err}");
-        }
-    }
-
-    #[inline]
-    async fn handle_bench_ordered(&mut self, request: bench::OrderedRequest) {
-        let per_len = request.batch_size;
-        let parts = request.data_len.div_ceil(per_len);
-        let mut data = vec![0; request.data_len];
-        let res: anyhow::Result<()> = try {
-            for index in 0..parts {
-                let mut data_partial = data.split_off(cmp::min(per_len, data.len()));
-                mem::swap(&mut data, &mut data_partial);
-                self.tx
-                    .send_pack(bench::OrderedResponse {
-                        data_partial,
-                        index,
-                    })
-                    .await?;
-                random_yield().await;
-            }
-            debug_assert!(data.is_empty(), "data remains");
-        };
-        if let Err(err) = res {
-            log::error!("error: {err}");
-        }
-    }
-
-    #[inline]
     async fn handle_login(&mut self, request: user::LoginRequest) {
         let username = request.username;
         let pwd_raw = request.password;
@@ -324,7 +396,7 @@ impl<T: Tx, R: Rx> Session<T, R> {
                     .bind(username.clone())
                     .fetch_one(db::pool())
                     .await;
-            let (pwd_hash, _user_id) = match res {
+            let (pwd_hash, user_id) = match res {
                 Ok(res) => res,
                 Err(err) => {
                     self.tx
@@ -348,6 +420,14 @@ impl<T: Tx, R: Rx> Session<T, R> {
                         message: String::new(),
                     })
                     .await?;
+                self.flush_notify.notify_one();
+                tokio::task::yield_now().await;
+
+                for state in self.llm_states.values_mut() {
+                    state.create_user_context(user_id);
+                    let _ = state.load_from_db().await;
+                }
+                log::info!("User {} logged in", username);
             } else {
                 self.tx
                     .send_pack(user::LoginResponse {
@@ -442,14 +522,132 @@ impl<T: Tx, R: Rx> Session<T, R> {
     }
 
     #[inline]
-    async fn handle_user_cleanup(&mut self, _: user::CleanupRequest) {
+    async fn handle_user_cleanup(&mut self, request: user::CleanupRequest) {
         let res: anyhow::Result<()> = try {
+            self.llm_states
+                .get_mut(&request.model)
+                .ok_or(anyhow::anyhow!("no such model"))?
+                .cleanup();
             self.tx
                 .send_pack(user::CleanupResponse {
                     success: true,
                     message: String::new(),
                 })
                 .await?;
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_fetch_message(&mut self, request: user::FetchMessageRequest) {
+        let res: anyhow::Result<()> = try {
+            let Some(user_context) = self
+                .llm_states
+                .get_mut(&request.model)
+                .ok_or(anyhow::anyhow!("no such model"))?
+                .user_context
+                .as_mut()
+            else {
+                self.tx
+                    .send_pack(user::FetchMessageResponse {
+                        messages: Vec::new(),
+                    })
+                    .await?;
+                return;
+            };
+            if let Some(load) = &user_context.load_message {
+                self.tx
+                    .send_pack(user::FetchMessageResponse {
+                        messages: load.clone(),
+                    })
+                    .await?;
+                return;
+            }
+            self.tx
+                .send_pack(user::FetchMessageResponse {
+                    messages: user_context.message.clone(),
+                })
+                .await?;
+            return;
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_bench_unreliable(&mut self, request: bench::UnreliableRequest) {
+        let max_len = request.mtu - CONSERVATIVE_HEAD_SIZE;
+        let parts = request.data_len.div_ceil(max_len);
+        let mut data = vec![0; request.data_len];
+        let mut res = try {
+            for _ in 0..parts {
+                let mut data_partial = data.split_off(cmp::min(max_len, data.len()));
+                mem::swap(&mut data, &mut data_partial);
+                self.tx
+                    .send_pack(bench::UnreliableResponse { data_partial })
+                    .await?;
+                random_yield().await;
+            }
+            debug_assert!(data.is_empty(), "data remains");
+        };
+        if let Err(err) = res {
+            log::error!("transfer data: {err}");
+        }
+        // a reliable packet sent as EOF
+        res = self
+            .tx
+            .send_pack(bench::UnreliableRequest {
+                data_len: 0,
+                mtu: 0,
+            })
+            .await;
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_bench_commutative(&mut self, request: bench::CommutativeRequest) {
+        let per_len = request.batch_size;
+        let parts = request.data_len.div_ceil(per_len);
+        let mut data = vec![0; request.data_len];
+        let res: anyhow::Result<()> = try {
+            for _ in 0..parts {
+                let mut data_partial = data.split_off(cmp::min(per_len, data.len()));
+                mem::swap(&mut data, &mut data_partial);
+                self.tx
+                    .send_pack(bench::CommutativeResponse { data_partial })
+                    .await?;
+                random_yield().await;
+            }
+            debug_assert!(data.is_empty(), "data remains");
+        };
+        if let Err(err) = res {
+            log::error!("error: {err}");
+        }
+    }
+
+    #[inline]
+    async fn handle_bench_ordered(&mut self, request: bench::OrderedRequest) {
+        let per_len = request.batch_size;
+        let parts = request.data_len.div_ceil(per_len);
+        let mut data = vec![0; request.data_len];
+        let res: anyhow::Result<()> = try {
+            for index in 0..parts {
+                let mut data_partial = data.split_off(cmp::min(per_len, data.len()));
+                mem::swap(&mut data, &mut data_partial);
+                self.tx
+                    .send_pack(bench::OrderedResponse {
+                        data_partial,
+                        index,
+                    })
+                    .await?;
+                random_yield().await;
+            }
+            debug_assert!(data.is_empty(), "data remains");
         };
         if let Err(err) = res {
             log::error!("error: {err}");
@@ -478,6 +676,19 @@ impl<T: Tx, R: Rx> Session<T, R> {
             Packet::UserCleanupRequest(request) => {
                 log::info!("got UserCleanupRequest");
                 self.handle_user_cleanup(request).await;
+            }
+            Packet::FetchMessageRequest(request) => {
+                log::info!("got FetchMessageRequest");
+                self.handle_fetch_message(request).await;
+            }
+            Packet::FetchModelsRequest(_) => {
+                log::info!("got FetchModelsRequest");
+                self.tx
+                    .send_pack(user::FetchModelsResponse {
+                        models: self.llm_states.keys().cloned().collect(),
+                    })
+                    .await
+                    .unwrap();
             }
             Packet::RealtimeAudioChunk(request) => {
                 self.handle_realtime_audio(request).await;
@@ -520,6 +731,12 @@ impl<T: Tx, R: Rx> Session<T, R> {
                 }
             }
         };
+        for state in self.llm_states.values_mut() {
+            state
+                .save_to_db()
+                .await
+                .expect("cannot save llm state to db");
+        }
         let wait_timeout = Duration::from_secs(10);
         self.close_notify.take().unwrap().send(wait).unwrap();
         let _ = self
